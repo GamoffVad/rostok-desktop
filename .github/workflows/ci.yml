@@ -23,3 +23,12 @@ jobs:
           $p = Start-Process src/Rostok.Desktop/bin/Release/net10.0-windows/Rostok.exe -ArgumentList '--selftest', "$PWD/selftest.txt" -Wait -PassThru
           Get-Content selftest.txt
           exit $p.ExitCode
+      - name: Самопроверка установщика (полная установка во временную папку)
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [IO.Compression.ZipFile]::CreateFromDirectory("$PWD/src/Rostok.Desktop/bin/Release/net10.0-windows", "$PWD/payload-test.zip")
+          $p = Start-Process dotnet -ArgumentList 'src/Rostok.Setup/bin/Release/net10.0-windows/Rostok-Setup.dll', '--selftest', "$PWD/setup-selftest.txt", '--payload', "$PWD/payload-test.zip" -Wait -PassThru
+          Get-Content setup-selftest.txt
+          if (Select-String -Path setup-selftest.txt -Pattern '^FAIL' -Quiet) { exit 1 }
+          exit $p.ExitCode

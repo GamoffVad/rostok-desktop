@@ -33,7 +33,7 @@ public sealed class SetupWindow : Window
     private string _dbPath;
     private bool _dbNetwork;
     private bool _desktop = true, _startMenu = true, _launch = true;
-    private bool _installing, _installed;
+    private bool _installing, _installed, _selfTest;
     private string? _error;
     private readonly ProgressBarView _progress = new();
     private readonly TextBlock _progressText = Ui.Muted("", 12.5);
@@ -178,7 +178,7 @@ public sealed class SetupWindow : Window
     {
         switch (_step)
         {
-            case 2: Go(3); _ = RunInstall(); break;
+            case 2: _ = RunInstall(); break;
             case 3: if (_error is not null) { _ = RunInstall(); } else Go(4); break;
             case 4:
                 // окно скрывается сразу: мастер не ждёт запуска программы
@@ -298,6 +298,9 @@ public sealed class SetupWindow : Window
     private FrameworkElement InstallView()
     {
         var s = Head("Установка", "Копирую файлы программы, настраиваю базу данных, лицензию и ярлыки.");
+        // полоса и подпись переходят в новый вариант шага: из прежнего их нужно вынуть, иначе WPF не даст их добавить
+        if (_progress.Parent is Panel p1) p1.Children.Remove(_progress);
+        if (_progressText.Parent is Panel p2) p2.Children.Remove(_progressText);
         s.Children.Add(_progress);
         s.Children.Add(_progressText.Margin(0, 10, 0, 0));
         if (_error is not null) s.Children.Add(Ui.Status(_error, false).Margin(0, 14, 0, 0).With(t => t.MaxWidth = 560));
@@ -331,52 +334,118 @@ public sealed class SetupWindow : Window
         Application.Current.Shutdown();
     }
 
-    // Самопроверка кнопок мастера без установки (режим --selftest <файл отчёта>).
-    public async Task SelfTest(string report)
+    // Самопроверка мастера (режим --selftest <файл отчёта> [--payload <zip>]):
+    // кнопки, ошибка установки без пакета, а с пакетом — полная установка во временную папку, «Готово» и запуск программы.
+    // Лицензия, ярлыки, права и реестр при этом не трогаются.
+    public async Task SelfTest(string report, string? payload)
     {
         var log = new List<string>();
+        void Check(bool ok, string what) { log.Add($"{(ok ? "ok  " : "FAIL")} {what}"); try { File.WriteAllLines(report, log); } catch (Exception) { } }
         Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        async Task Settle() { await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); await Task.Delay(150); }
+        _selfTest = true;
+        async Task Settle(int ms = 150) { await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); await Task.Delay(ms); }
+        async Task WaitInstall() { for (var i = 0; i < 600 && (_installing || _step == 3 && _error is null && !_installed); i++) await Settle(100); }
+        // нажатие через автоматизацию выполняется не сразу, а ставится в очередь — после него всегда await Settle()
         void Press(Button b) => ((System.Windows.Automation.Provider.IInvokeProvider)new System.Windows.Automation.Peers.ButtonAutomationPeer(b).GetPattern(System.Windows.Automation.Peers.PatternInterface.Invoke)!).Invoke();
+
         Go(0); await Settle();
         Press(_next); await Settle();
-        log.Add($"{(_step == 1 ? "ok  " : "FAIL")} «Далее» на приветствии ведёт к активации");
-        _installed = true;
-        var fake = Environment.GetEnvironmentVariable("ROSTOK_SETUP_FAKE_DIR");
-        _launch = fake is not null;
-        if (fake is not null) _installDir = fake;
-        Go(4); await Settle();
-        log.Add($"{(_next.IsEnabled ? "ok  " : "FAIL")} кнопка «Готово» доступна");
+        Check(_step == 1, "«Далее» на приветствии ведёт к активации");
+
+        var temp = Path.Combine(Path.GetTempPath(), $"rostok-setup-selftest-{Guid.NewGuid():N}");
+        _installDir = Path.Combine(temp, "Росток");
+        _dbPath = Path.Combine(temp, "Data", "rostok.db");
+
+        // 1. без пакета: ошибка показывается в окне, мастер не зависает
+        Installer.PayloadOverride = null;
+        if (!Installer.HasPayload)
+        {
+            Go(2); await Settle();
+            Press(_next);
+            await Settle();
+            await WaitInstall();
+            Check(_step == 3 && _error is not null && !_installing && _next.IsEnabled, $"без пакета: ошибка видна, кнопка «Повторить» доступна, мастер не завис [шаг {_step + 1}, установлено {_installed}, идёт {_installing}, ошибка: {_error ?? "нет"}]");
+        }
+
+        // 2. с пакетом: полная установка во временную папку
+        if (payload is not null)
+        {
+            Installer.PayloadOverride = payload;
+            _error = null;
+            _installed = false;
+            Go(2); await Settle();
+            Press(_next);
+            await Settle(50);
+            Check(_step == 3 && _progress.Parent is not null, "шаг «Установка» открылся, полоса прогресса на месте");
+            await WaitInstall();
+            Check(_installed && _step == 4, $"установка завершилась{(_error is null ? "" : $": {_error}")}");
+            Check(_progress.Value >= 0.999, "полоса прогресса дошла до конца");
+            Check(File.Exists(Path.Combine(_installDir, Installer.ExeName)), "программа скопирована в папку установки");
+            var settings = Path.Combine(_installDir, "appsettings.json");
+            Check(File.Exists(settings) && File.ReadAllText(settings).Contains("rostok.db"), "appsettings.json указывает на выбранную базу");
+            _launch = true;
+        }
+        else
+        {
+            _installed = true;
+            _launch = false;
+            Go(4); await Settle();
+        }
+        Check(_next.IsEnabled, "кнопка «Готово» доступна");
+
         // «Готово» скрывает окно, запускает программу и завершает установщик — итог пишем при завершении
+        var exe = Path.Combine(_installDir, Installer.ExeName);
         Application.Current.Exit += (_, _) =>
         {
-            log.Add($"{(!IsVisible ? "ok  " : "FAIL")} «Готово» скрывает окно и завершает установщик");
+            Check(!IsVisible, "«Готово» скрывает окно и завершает установщик");
+            if (payload is not null)
+            {
+                System.Diagnostics.Process? started = null;
+                for (var i = 0; i < 40 && started is null; i++)
+                {
+                    Thread.Sleep(250);
+                    started = System.Diagnostics.Process.GetProcessesByName("Rostok").FirstOrDefault(p =>
+                    {
+                        try { return string.Equals(p.MainModule?.FileName, exe, StringComparison.OrdinalIgnoreCase); } catch (Exception) { return false; }
+                    });
+                }
+                Check(started is not null, "установленная программа запустилась");
+                try { started?.Kill(); started?.WaitForExit(5000); } catch (Exception) { }
+                try { Directory.Delete(temp, true); } catch (Exception) { }
+            }
             File.WriteAllLines(report, log);
         };
         Press(_next);
-        await Task.Delay(3000);
-        log.Add("FAIL «Готово» не завершил установщик за 3 секунды");
+        await Task.Delay(5000);
+        Check(false, "«Готово» не завершил установщик за 5 секунд");
         File.WriteAllLines(report, log);
         Application.Current.Shutdown(1);
     }
 
     private async Task RunInstall()
     {
-        _installing = true;
         _error = null;
+        _progress.Value = 0;
+        _progressText.Text = "Готовлю установку…";
         Go(3);
-        var options = new InstallOptions(_installDir.Trim(), _dbPath.Trim(), _desktop, _startMenu, _activation.Key!, _activation.Serial);
-        var progress = new Progress<(double Value, string Text)>(p => { _progress.Value = p.Value; _progressText.Text = p.Text; });
+        _installing = true;
+        UpdateButtons();
         try
         {
+            var options = new InstallOptions(_installDir.Trim(), _dbPath.Trim(), _desktop, _startMenu, _activation.Key ?? "", _activation.Serial, !_selfTest);
+            var progress = new Progress<(double Value, string Text)>(p => { _progress.Value = p.Value; _progressText.Text = p.Text; });
             await Task.Run(() => Installer.Install(options, progress));
             _installed = true;
         }
         catch (Exception e)
         {
+            // любая ошибка — в окне, с кнопкой «Повторить»; раньше ошибка терялась, и мастер «висел» на пустой полосе
             _error = $"Установка не завершена: {e.Message}";
         }
-        _installing = false;
+        finally
+        {
+            _installing = false;
+        }
         if (_installed) Go(4); else Go(3);
     }
 }

@@ -10,7 +10,8 @@ using Rostok.Licensing;
 
 namespace Rostok.Setup;
 
-public sealed record InstallOptions(string InstallDir, string DatabasePath, bool DesktopShortcut, bool StartMenuShortcut, string MachineKey, string Serial);
+// SystemChanges = false — только для самопроверки: файлы и настройки без лицензии, ярлыков, прав и записи в реестр.
+public sealed record InstallOptions(string InstallDir, string DatabasePath, bool DesktopShortcut, bool StartMenuShortcut, string MachineKey, string Serial, bool SystemChanges = true);
 
 // Установка: распаковка пакета, настройка базы, лицензия, ярлыки и запись в «Программы и компоненты».
 public static class Installer
@@ -24,7 +25,14 @@ public static class Installer
     public static string DefaultInstallDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), AppName);
     public static string DefaultDatabasePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Rostok", "rostok.db");
 
-    public static bool HasPayload => Assembly.GetExecutingAssembly().GetManifestResourceNames().Contains("Rostok.Setup.Payload.zip");
+    public static bool HasPayload => PayloadOverride is not null || Assembly.GetExecutingAssembly().GetManifestResourceNames().Contains("Rostok.Setup.Payload.zip");
+
+    // Пакет из файла вместо встроенного — для самопроверки отладочной сборки.
+    internal static string? PayloadOverride { get; set; }
+
+    private static Stream? OpenPayload() => PayloadOverride is not null
+        ? File.OpenRead(PayloadOverride)
+        : Assembly.GetExecutingAssembly().GetManifestResourceStream("Rostok.Setup.Payload.zip");
 
     // Уже установленная версия — чтобы предложить ту же папку и тот же путь к базе.
     public static (string? Dir, string? Version) Existing()
@@ -47,7 +55,7 @@ public static class Installer
 
     public static void Install(InstallOptions o, IProgress<(double Value, string Text)> progress)
     {
-        using var payload = Assembly.GetExecutingAssembly().GetManifestResourceStream("Rostok.Setup.Payload.zip")
+        using var payload = OpenPayload()
             ?? throw new InvalidOperationException("В установщик не встроен пакет программы. Соберите его скриптом build\\build-installer.ps1.");
 
         progress.Report((0.02, "Проверяю, не запущен ли «Росток»…"));
@@ -88,7 +96,12 @@ public static class Installer
         if (!string.IsNullOrEmpty(dbDir) && !o.DatabasePath.StartsWith(@"\\", StringComparison.Ordinal))
         {
             Directory.CreateDirectory(dbDir);
-            AllowUsers(dbDir);
+            if (o.SystemChanges) AllowUsers(dbDir);
+        }
+        if (!o.SystemChanges)
+        {
+            progress.Report((1, "Готово"));
+            return;
         }
 
         progress.Report((0.86, "Сохраняю лицензию…"));

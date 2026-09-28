@@ -33,7 +33,8 @@ public partial class App : Application
             w.Left = -20000;
             w.ShowActivated = false;
             w.Show();
-            _ = w.SelfTest(e.Args[t + 1]);
+            var pl = Array.IndexOf(e.Args, "--payload");
+            _ = w.SelfTest(e.Args[t + 1], pl >= 0 && pl + 1 < e.Args.Length ? e.Args[pl + 1] : null);
             return;
         }
         w.Show();

@@ -132,6 +132,8 @@ public sealed class ActivationPanel : StackPanel
         else
         {
             IsValid = License.Verify(Key, Serial);
+            // верный номер сохраняется сразу — не дожидаясь конца установки: при повторном запуске он уже будет подставлен
+            if (IsValid && !was) License.Save(Key, Serial);
             SetStatus(IsValid ? "Серийный номер подходит к этому компьютеру." : "Серийный номер не подходит к ключу этого компьютера.", IsValid);
         }
         Ui.SetIsInvalid(_serial, Serial.Length > 0 && !IsValid);
