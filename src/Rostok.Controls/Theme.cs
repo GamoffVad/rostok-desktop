@@ -85,6 +85,8 @@ public static class Theme
         ToolTipService.ShowDurationProperty.OverrideMetadata(typeof(FrameworkElement), new FrameworkPropertyMetadata(20000));
         TextElement.FontFamilyProperty.OverrideMetadata(typeof(TextElement), new FrameworkPropertyMetadata(UiFont));
         TextBlock.FontFamilyProperty.OverrideMetadata(typeof(TextBlock), new FrameworkPropertyMetadata(UiFont));
+        // Картинки уменьшаются качественным фильтром: без «ступенек» на логотипе и иллюстрациях
+        RenderOptions.BitmapScalingModeProperty.OverrideMetadata(typeof(Image), new FrameworkPropertyMetadata(BitmapScalingMode.HighQuality));
     }
 
     public static Pen DashPen(Brush? brush = null, double thickness = 1)
