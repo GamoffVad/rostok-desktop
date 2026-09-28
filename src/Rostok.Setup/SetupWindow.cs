@@ -183,31 +183,13 @@ public sealed class SetupWindow : Window
             case 4:
                 // окно скрывается сразу: мастер не ждёт запуска программы
                 Hide();
-                if (_launch) LaunchAsUser(Path.Combine(_installDir, Installer.ExeName));
+                if (_launch) UserLauncher.Launch(Path.Combine(_installDir, Installer.ExeName));
                 Application.Current.Shutdown();
                 break;
             default: Go(_step + 1); break;
         }
     }
 
-    // Установщик работает с правами администратора. Программу запускаем через Проводник — от имени обычного пользователя,
-    // как при открытии ярлыка: так она не получает лишних прав, а мастер не ждёт системного вызова «открыть файл».
-    private static void LaunchAsUser(string exe)
-    {
-        if (!File.Exists(exe)) return;
-        try
-        {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{exe}\"") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
-        }
-        catch (Exception)
-        {
-            try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! }); }
-            catch (Exception) { /* запуск не обязателен: программу можно открыть ярлыком */ }
-        }
-    }
-
-    // Заголовок шага — компактнее, чем в программе: окно мастера невысокое
-    // Содержимое шага добавляется в этот же блок, поэтому отступ до полей — после пояснения, а не у всего блока.
     private static StackPanel Head(string title, string subtitle) => new()
     {
         Children =
@@ -340,7 +322,7 @@ public sealed class SetupWindow : Window
         var root = (FrameworkElement)Content;
         for (var i = 0; i < Steps.Length; i++)
         {
-            if (i == 1) { Go(1); await _activation.GenerateAsync(); _activation.SetSerial("7N3QK-1AZ8M-…"); }
+            if (i == 1) { Go(1); await _activation.GenerateAsync(save: false); _activation.SetSerial("7N3QK-1AZ8M-…"); }
             else if (i == 3) { Go(3); _progress.Value = 0.62; _progressText.Text = "Копирую Rostok.Core.dll"; UpdateButtons(); }
             else Go(i);
             await Settle();

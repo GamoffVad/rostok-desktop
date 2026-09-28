@@ -9,6 +9,13 @@ public partial class App : Application
     {
         base.OnStartup(e);
         Theme.Initialize();
+        var lt = Array.IndexOf(e.Args, "--launch-test");
+        if (lt >= 0 && lt + 1 < e.Args.Length)
+        {
+            Environment.ExitCode = UserLauncher.TestDesktop(e.Args[lt + 1]) ? 0 : 2;
+            Shutdown(Environment.ExitCode);
+            return;
+        }
         var w = new SetupWindow();
         MainWindow = w;
         var i = Array.IndexOf(e.Args, "--shots");

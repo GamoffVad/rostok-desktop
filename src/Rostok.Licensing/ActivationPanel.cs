@@ -18,11 +18,14 @@ public sealed class ActivationPanel : StackPanel
     public string? Key { get; private set; }
     public string Serial => _serial.Text.Trim();
     public bool IsValid { get; private set; }
+    private readonly TextBlock _restored;
     public event Action<bool>? ValidityChanged;
 
     public ActivationPanel()
     {
         Children.Add(Step("1", "Ключ этого компьютера"));
+        _restored = Ui.Status("", true).With(t => { t.Visibility = Visibility.Collapsed; t.Margin = new Thickness(0, 0, 0, 10); });
+        Children.Add(_restored);
         _generate = Compact(Ui.Primary("Сгенерировать ключ", Generate, IconKind.Key));
         _generate.HorizontalAlignment = HorizontalAlignment.Left;
         Children.Add(_generate);
@@ -52,6 +55,22 @@ public sealed class ActivationPanel : StackPanel
             try { if (Clipboard.ContainsText()) _serial.Text = Clipboard.GetText().Trim(); } catch (Exception) { /* буфер занят */ }
         });
         Children.Add(Ui.Row(16, paste, _status).Margin(0, 2, 0, 0));
+
+        // повторная установка или обновление: ранее выданные ключ и серийный номер показываются сразу
+        if (License.HasRequest()) Loaded += async (_, _) => { if (Key is null) await RestoreAsync(); };
+    }
+
+    // Подставляет ключ этого компьютера и, если он уже активирован, сохранённый серийный номер.
+    public async Task RestoreAsync()
+    {
+        await GenerateAsync(save: false);
+        if (Key is null) return;
+        var saved = License.Saved(Key);
+        if (saved is not null && Serial.Length == 0) _serial.Text = saved.Serial;
+        _restored.Text = saved is not null
+            ? $"Этот компьютер уже активирован {saved.ActivatedAt:dd.MM.yyyy}: ключ и серийный номер подставлены — можно продолжать."
+            : "Ключ этого компьютера уже был сгенерирован. Вставьте серийный номер от администратора.";
+        _restored.Visibility = Visibility.Visible;
     }
 
     // Кнопки блока — высотой с поле (38 px), чтобы блок был компактным
@@ -74,7 +93,9 @@ public sealed class ActivationPanel : StackPanel
 
     private async void Generate() => await GenerateAsync();
 
-    public async Task GenerateAsync()
+    public async Task GenerateAsync() => await GenerateAsync(save: true);
+
+    public async Task GenerateAsync(bool save)
     {
         _generate.IsEnabled = false;
         _generate.Content = Ui.Content(IconKind.Refresh, "Считываю данные платы…");
@@ -85,6 +106,7 @@ public sealed class ActivationPanel : StackPanel
         if (Key is null) return;
         _key.Text = Key;
         _keyBox.Visibility = Visibility.Visible;
+        if (save) License.SaveRequest(Key);
         Check();
     }
 

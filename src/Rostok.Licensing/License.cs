@@ -138,6 +138,44 @@ public static class License
         }
         return false;
     }
+
+    // Ранее сохранённая лицензия этого компьютера (ключ совпадает, номер верный) — для повторной установки и обновления.
+    public static LicenseFile? Saved(string machineKey)
+    {
+        foreach (var path in new[] { MachineFile, UserFile })
+        {
+            try
+            {
+                if (!File.Exists(path)) continue;
+                var lic = JsonSerializer.Deserialize<LicenseFile>(File.ReadAllText(path));
+                if (lic is not null && Normalize(lic.MachineKey) == Normalize(machineKey) && Verify(machineKey, lic.Serial)) return lic;
+            }
+            catch (Exception) { /* повреждённый файл — как будто его нет */ }
+        }
+        return null;
+    }
+
+    // Ключ компьютера запоминается сразу после генерации: пока сотрудник ждёт номер от администратора,
+    // установщик можно закрыть — при следующем запуске ключ уже будет показан.
+    public static string RequestMachineFile => Path.Combine(Path.GetDirectoryName(MachineFile)!, "machine-key.txt");
+    public static string RequestUserFile => Path.Combine(Path.GetDirectoryName(UserFile)!, "machine-key.txt");
+
+    public static void SaveRequest(string machineKey)
+    {
+        foreach (var path in new[] { RequestMachineFile, RequestUserFile })
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, machineKey);
+                return;
+            }
+            catch (Exception) when (path != RequestUserFile) { /* нет прав на общую папку — сохраняем для пользователя */ }
+            catch (Exception) { /* не удалось запомнить — ключ всегда можно сгенерировать заново, он тот же */ }
+        }
+    }
+
+    public static bool HasRequest() => File.Exists(RequestMachineFile) || File.Exists(RequestUserFile) || File.Exists(MachineFile) || File.Exists(UserFile);
 }
 
 // Base32 Крокфорда: цифры и буквы без I, L, O, U — ключ легко продиктовать и переписать.
