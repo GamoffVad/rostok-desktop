@@ -59,6 +59,7 @@ public sealed class SetupWindow : Window
 
         _back = Ui.Ghost("Назад", () => Go(_step - 1), IconKind.ArrowBack);
         _next = Ui.Primary("Далее", Next);
+        _back.MinHeight = _next.MinHeight = 38;
         _cancel = Ui.TextAction("отменить установку", Close);
         _activation.ValidityChanged += _ => UpdateButtons();
 
@@ -205,10 +206,15 @@ public sealed class SetupWindow : Window
         }
     }
 
+    // Заголовок шага — компактнее, чем в программе: окно мастера невысокое
+    // Содержимое шага добавляется в этот же блок, поэтому отступ до полей — после пояснения, а не у всего блока.
     private static StackPanel Head(string title, string subtitle) => new()
     {
-        Margin = new Thickness(0, 0, 0, 22),
-        Children = { Ui.H1(title), Ui.Subtitle(subtitle).With(t => t.MaxWidth = 520) },
+        Children =
+        {
+            Ui.H1(title).With(t => { t.FontSize = 26; t.LineHeight = 30; }),
+            Ui.Subtitle(subtitle).With(t => { t.MaxWidth = 540; t.FontSize = 13.5; t.LineHeight = 20; t.Margin = new Thickness(0, 6, 0, 20); }),
+        },
     };
 
     private FrameworkElement WelcomeView()
@@ -280,9 +286,12 @@ public sealed class SetupWindow : Window
         return s;
     }
 
+    // Поле и кнопка-иконка одной высоты 38 px; строка сжимается под ширину окна, кнопка не обрезается
     private static DockPanel Row(FrameworkElement input, Button button)
     {
-        var d = new DockPanel { Width = 560, HorizontalAlignment = HorizontalAlignment.Left };
+        var d = new DockPanel { MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Stretch };
+        if (input is Control c) { c.MinHeight = 38; c.Padding = new Thickness(7, 5, 7, 5); c.VerticalContentAlignment = VerticalAlignment.Center; }
+        button.Width = button.Height = 38;
         button.Margin = new Thickness(8, 0, 0, 0);
         DockPanel.SetDock(button, Dock.Right);
         d.Children.Add(button);

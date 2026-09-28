@@ -23,25 +23,28 @@ public sealed class ActivationPanel : StackPanel
     public ActivationPanel()
     {
         Children.Add(Step("1", "Ключ этого компьютера"));
-        _generate = Ui.Primary("Сгенерировать ключ", Generate, IconKind.Key);
+        _generate = Compact(Ui.Primary("Сгенерировать ключ", Generate, IconKind.Key));
         _generate.HorizontalAlignment = HorizontalAlignment.Left;
         Children.Add(_generate);
 
-        _key = new TextBox { IsReadOnly = true, FontFamily = Theme.MonoFont, FontSize = 16, FontWeight = FontWeights.SemiBold, Padding = new Thickness(12, 10, 12, 10), Foreground = Theme.Accent };
-        _copy = Ui.Ghost("Скопировать", Copy, IconKind.Copy);
+        // компактная строка ключа: поле и кнопка одной высоты 38 px, отступ от кнопки «Сгенерировать» — 12 px
+        _key = new TextBox { IsReadOnly = true, FontFamily = Theme.MonoFont, FontSize = 14, FontWeight = FontWeights.SemiBold, Padding = new Thickness(9, 7, 9, 7), MinHeight = 38, Foreground = Theme.Accent };
+        _copy = Compact(Ui.Ghost("Скопировать", Copy, IconKind.Copy));
         _copy.Margin = new Thickness(8, 0, 0, 0);
+        _keyBox.Margin = new Thickness(0, 12, 0, 0);
         var keyRow = new DockPanel();
         DockPanel.SetDock(_copy, Dock.Right);
         keyRow.Children.Add(_copy);
         keyRow.Children.Add(_key);
         _keyBox.Children.Add(keyRow);
-        _keyBox.Children.Add(Ui.Faint("Передайте ключ администратору — по почте или в мессенджере. Ключ рассчитан по материнской плате этого компьютера: серийный номер подойдёт только к нему.").Margin(0, 8, 0, 0));
+        _keyBox.Children.Add(Ui.Faint("Передайте ключ администратору — по почте или в мессенджере. Ключ рассчитан по материнской плате этого компьютера: серийный номер подойдёт только к нему.").Margin(0, 6, 0, 0).With(t => t.FontSize = 12.5));
         Children.Add(_keyBox);
 
-        Children.Add(Step("2", "Серийный номер от администратора").Margin(0, 26, 0, 8));
+        Children.Add(Step("2", "Серийный номер от администратора").Margin(0, 22, 0, 8));
         _serial = Ui.Input("", "Вставьте серийный номер, который прислал администратор", null, multiline: true, rows: 3);
         _serial.FontFamily = Theme.MonoFont;
-        _serial.MinHeight = 84;
+        _serial.FontSize = 12.5;
+        _serial.MinHeight = 66;
         _serial.TextChanged += (_, _) => Check();
         Children.Add(_serial);
         var paste = Ui.TextAction("вставить из буфера обмена", () =>
@@ -49,6 +52,14 @@ public sealed class ActivationPanel : StackPanel
             try { if (Clipboard.ContainsText()) _serial.Text = Clipboard.GetText().Trim(); } catch (Exception) { /* буфер занят */ }
         });
         Children.Add(Ui.Row(16, paste, _status).Margin(0, 2, 0, 0));
+    }
+
+    // Кнопки блока — высотой с поле (38 px), чтобы блок был компактным
+    private static Button Compact(Button b)
+    {
+        b.MinHeight = 38;
+        b.Padding = new Thickness(14, 0, 14, 0);
+        return b;
     }
 
     private static FrameworkElement Step(string num, string title) => new StackPanel
