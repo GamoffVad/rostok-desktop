@@ -1,0 +1,10 @@
+bin/
+obj/
+*.user
+.vs/
+artifacts/
+publish/
+TestResults/
+# секретный ключ подписи серийных номеров — только у администратора, в репозиторий не попадает
+keys/*.private.*
+*.private.pem

@@ -1,0 +1,157 @@
+<!-- Стили по умолчанию для собственных элементов библиотеки: флажок и выпадающий список. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:c="clr-namespace:Rostok.Controls">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="pack://application:,,,/Rostok.Controls;component/Themes/Palette.xaml" />
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Флажок: квадрат 18 px, рамка чернилами-3 (контраст ≥ 3:1), отмеченный — заливка акцентом -->
+  <Style TargetType="{x:Type c:Checkbox}">
+    <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+    <Setter Property="FontSize" Value="13.5" />
+    <Setter Property="Foreground" Value="{StaticResource Ink2}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type c:Checkbox}">
+          <Grid Background="Transparent">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border x:Name="box" Width="18" Height="18" BorderThickness="1.5" BorderBrush="{StaticResource Ink3}" Background="{StaticResource Sheet}" CornerRadius="2" VerticalAlignment="Center">
+              <c:Icon x:Name="check" Kind="Check" Size="12" StrokeWidth="2.6" Foreground="{StaticResource Sheet}" Visibility="Hidden" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <Rectangle x:Name="focus" Width="24" Height="24" RadiusX="3" RadiusY="3" Stroke="{StaticResource Accent}" StrokeThickness="2" Visibility="Collapsed" />
+            <ContentPresenter x:Name="label" Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="False" />
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource Accent}" />
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="box" Property="Background" Value="{StaticResource Accent}" />
+              <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource Accent}" />
+              <Setter TargetName="check" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="Content" Value="{x:Null}">
+              <Setter TargetName="label" Property="Margin" Value="0" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.55" />
+              <Setter Property="Cursor" Value="Arrow" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Строка выпадающего списка -->
+  <Style x:Key="DropdownItem" TargetType="ComboBoxItem">
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ComboBoxItem">
+          <Border x:Name="row" Background="Transparent" MinHeight="40" Padding="12,4">
+            <TextBlock x:Name="text" Text="{Binding Label}" FontSize="13.5" Foreground="{StaticResource Ink2}" VerticalAlignment="Center" TextWrapping="Wrap" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+              <Setter TargetName="row" Property="Background" Value="{StaticResource Soft}" />
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="row" Property="Background" Value="{StaticResource Soft}" />
+              <Setter TargetName="text" Property="Foreground" Value="{StaticResource Accent}" />
+              <Setter TargetName="text" Property="FontWeight" Value="SemiBold" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Выпадающий список: plain — для фильтров над контентом, light — для форм -->
+  <Style TargetType="{x:Type c:Dropdown}">
+    <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="ItemContainerStyle" Value="{StaticResource DropdownItem}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="MinHeight" Value="44" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type c:Dropdown}">
+          <Grid x:Name="root">
+            <ToggleButton x:Name="toggle" Focusable="False" ClickMode="Press"
+                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+              <ToggleButton.Template>
+                <ControlTemplate TargetType="ToggleButton">
+                  <ContentPresenter />
+                </ControlTemplate>
+              </ToggleButton.Template>
+              <Border x:Name="field" Background="Transparent" BorderThickness="0" CornerRadius="2" MinHeight="{TemplateBinding MinHeight}">
+                <DockPanel x:Name="inner" LastChildFill="True" Background="Transparent">
+                  <TextBlock DockPanel.Dock="Right" Text="▾" FontSize="12" Foreground="{StaticResource Ink3}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                  <TextBlock x:Name="value" Text="{TemplateBinding DisplayText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                             FontSize="15" FontWeight="Bold" Foreground="{StaticResource Ink}" />
+                </DockPanel>
+              </Border>
+            </ToggleButton>
+            <Rectangle x:Name="focus" Stroke="{StaticResource Accent}" StrokeThickness="2" RadiusX="2" RadiusY="2" Margin="-3" Visibility="Collapsed" IsHitTestVisible="False" />
+            <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" VerticalOffset="2" AllowsTransparency="True"
+                   PopupAnimation="None" Focusable="False" StaysOpen="False">
+              <c:DashBorder Background="{StaticResource Sheet}" Sides="All" Padding="0,4"
+                            MinWidth="{Binding ActualWidth, ElementName=root}" MaxWidth="420" MaxHeight="320">
+                <Grid>
+                  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                  </ScrollViewer>
+                  <TextBlock x:Name="none" Text="пока нет" Foreground="{StaticResource Faint}" FontSize="13.5" Margin="12,10" Visibility="Collapsed" />
+                </Grid>
+              </c:DashBorder>
+            </Popup>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Variant" Value="Light">
+              <Setter TargetName="field" Property="Background" Value="{StaticResource Sheet}" />
+              <Setter TargetName="field" Property="BorderBrush" Value="{StaticResource Dash}" />
+              <Setter TargetName="field" Property="BorderThickness" Value="1" />
+              <Setter TargetName="inner" Property="Margin" Value="12,0" />
+              <Setter TargetName="value" Property="FontSize" Value="13" />
+              <Setter TargetName="value" Property="FontWeight" Value="Normal" />
+              <Setter Property="MinHeight" Value="38" />
+            </Trigger>
+            <Trigger Property="IsPlaceholder" Value="True">
+              <Setter TargetName="value" Property="Foreground" Value="{StaticResource Faint}" />
+              <Setter TargetName="value" Property="FontWeight" Value="Normal" />
+            </Trigger>
+            <Trigger Property="HasItems" Value="False">
+              <Setter TargetName="none" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="Variant" Value="Light" />
+                <Condition Property="IsDropDownOpen" Value="True" />
+              </MultiTrigger.Conditions>
+              <Setter TargetName="field" Property="BorderBrush" Value="{StaticResource Accent}" />
+            </MultiTrigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.6" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+</ResourceDictionary>

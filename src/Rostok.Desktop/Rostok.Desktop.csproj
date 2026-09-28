@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Rostok.Desktop</RootNamespace>
+    <AssemblyName>Rostok</AssemblyName>
+    <ApplicationIcon>Assets\rostok.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>Росток</Product>
+    <Company>Росток</Company>
+    <Description>Росток — мониторинг речевого и нейропсихологического развития детей для психолога и логопеда</Description>
+    <SatelliteResourceLanguages>ru</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Rostok.Core\Rostok.Core.csproj" />
+    <ProjectReference Include="..\Rostok.Controls\Rostok.Controls.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\rostok.ico" />
+    <!-- база данных в проекте: пустая схема; при запуске файл создаётся сам, если его нет -->
+    <None Include="Data\rostok.db" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Data\rostok.db')" />
+    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
