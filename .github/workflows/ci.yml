@@ -1,0 +1,25 @@
+name: Сборка и проверки
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Сборка
+        run: dotnet build Rostok.sln -c Release
+      - name: Проверки расчётов, хранилища и лицензий
+        run: dotnet test Rostok.sln -c Release --no-build
+      - name: Самопроверка интерфейса
+        shell: pwsh
+        run: |
+          $p = Start-Process src/Rostok.Desktop/bin/Release/net10.0-windows/Rostok.exe -ArgumentList '--selftest', "$PWD/selftest.txt" -Wait -PassThru
+          Get-Content selftest.txt
+          exit $p.ExitCode

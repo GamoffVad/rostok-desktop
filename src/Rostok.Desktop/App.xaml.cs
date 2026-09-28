@@ -13,7 +13,7 @@ public partial class App : Application
         Theme.Initialize();
         DispatcherUnhandledException += OnUnhandled;
         if (e.Args.Contains("--uninstall")) { UninstallWindow.Run(); return; }
-        if (Shots.TryRun(e.Args)) return;
+        if (Shots.TryRun(e.Args) || SelfTest.TryRun(e.Args)) return;
 #if DEBUG
         AppHost.Start();
 #else

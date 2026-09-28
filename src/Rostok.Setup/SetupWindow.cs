@@ -268,7 +268,7 @@ public sealed class SetupWindow : Window
 
     private static DockPanel Row(FrameworkElement input, Button button)
     {
-        var d = new DockPanel { MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
+        var d = new DockPanel { Width = 560, HorizontalAlignment = HorizontalAlignment.Left };
         button.Margin = new Thickness(8, 0, 0, 0);
         DockPanel.SetDock(button, Dock.Right);
         d.Children.Add(button);

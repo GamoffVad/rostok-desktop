@@ -28,7 +28,8 @@ public sealed class AppSettings
             if (File.Exists(AppFile))
             {
                 var fromApp = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(AppFile));
-                if (!string.IsNullOrWhiteSpace(fromApp?.DatabasePath)) return fromApp.DatabasePath!;
+                // одиночная обратная косая в JSON даёт управляющий символ вместо пути — такой путь не принимаем
+                if (!string.IsNullOrWhiteSpace(fromApp?.DatabasePath) && !fromApp.DatabasePath.Any(char.IsControl)) return fromApp.DatabasePath!;
             }
         }
         catch (Exception) { /* повреждённый файл — стандартный путь */ }
