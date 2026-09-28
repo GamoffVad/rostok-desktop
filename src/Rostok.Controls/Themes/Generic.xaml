@@ -6,6 +6,17 @@
     <ResourceDictionary Source="pack://application:,,,/Rostok.Controls;component/Themes/Palette.xaml" />
   </ResourceDictionary.MergedDictionaries>
 
+  <!-- Рамка фокуса: только при переходе с клавиатуры (Tab), как :focus-visible в веб-версии; после щелчка мышью её нет -->
+  <Style x:Key="FocusRing">
+    <Setter Property="Control.Template">
+      <Setter.Value>
+        <ControlTemplate>
+          <Rectangle Margin="-3" RadiusX="2" RadiusY="2" Stroke="{StaticResource Accent}" StrokeThickness="2" SnapsToDevicePixels="True" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Флажок: квадрат 18 px, рамка чернилами-3 (контраст ≥ 3:1), отмеченный — заливка акцентом -->
   <Style TargetType="{x:Type c:Checkbox}">
     <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
@@ -13,7 +24,7 @@
     <Setter Property="Foreground" Value="{StaticResource Ink2}" />
     <Setter Property="Cursor" Value="Hand" />
     <Setter Property="MinHeight" Value="32" />
-    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="{x:Type c:Checkbox}">
@@ -39,9 +50,6 @@
             </Trigger>
             <Trigger Property="Content" Value="{x:Null}">
               <Setter TargetName="label" Property="Margin" Value="0" />
-            </Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.55" />
@@ -81,7 +89,7 @@
   <!-- Выпадающий список: plain — для фильтров над контентом, light — для форм -->
   <Style TargetType="{x:Type c:Dropdown}">
     <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
-    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
     <Setter Property="ItemContainerStyle" Value="{StaticResource DropdownItem}" />
     <Setter Property="Cursor" Value="Hand" />
     <Setter Property="MinHeight" Value="44" />
@@ -143,9 +151,6 @@
               </MultiTrigger.Conditions>
               <Setter TargetName="field" Property="BorderBrush" Value="{StaticResource Accent}" />
             </MultiTrigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
-            </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.6" />
             </Trigger>

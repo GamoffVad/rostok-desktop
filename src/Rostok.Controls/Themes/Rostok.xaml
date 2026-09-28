@@ -7,6 +7,17 @@
     <ResourceDictionary Source="pack://application:,,,/Rostok.Controls;component/Themes/Palette.xaml" />
   </ResourceDictionary.MergedDictionaries>
 
+  <!-- Рамка фокуса: только при переходе с клавиатуры (Tab), как :focus-visible в веб-версии; после щелчка мышью её нет -->
+  <Style x:Key="FocusRing">
+    <Setter Property="Control.Template">
+      <Setter.Value>
+        <ControlTemplate>
+          <Rectangle Margin="-3" RadiusX="2" RadiusY="2" Stroke="{StaticResource Accent}" StrokeThickness="2" SnapsToDevicePixels="True" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- ── Текст ─────────────────────────────────────────── -->
   <Style x:Key="H1" TargetType="TextBlock">
     <Setter Property="FontSize" Value="30" />
@@ -62,7 +73,7 @@
   <Style x:Key="ButtonBase" TargetType="Button">
     <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
     <Setter Property="Cursor" Value="Hand" />
-    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="SnapsToDevicePixels" Value="True" />
@@ -88,9 +99,6 @@
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="bg" Property="Background" Value="{StaticResource AccentHover}" />
-            </Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.6" />
@@ -127,9 +135,6 @@
               <Setter TargetName="frame" Property="Stroke" Value="{StaticResource Accent}" />
               <Setter TargetName="frame" Property="StrokeDashArray" Value="{x:Null}" />
               <Setter Property="Background" Value="{StaticResource Soft}" />
-            </Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.6" />
@@ -175,9 +180,6 @@
             <Trigger Property="IsMouseOver" Value="True">
               <Setter Property="Foreground" Value="{StaticResource Accent}" />
             </Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
-            </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.5" />
             </Trigger>
@@ -221,9 +223,6 @@
               <Setter Property="Foreground" Value="{StaticResource Accent}" />
               <Setter TargetName="frame" Property="Stroke" Value="{StaticResource Accent}" />
               <Setter TargetName="frame" Property="StrokeDashArray" Value="{x:Null}" />
-            </Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.35" />
@@ -286,9 +285,6 @@
               <Setter Property="Foreground" Value="{StaticResource Accent}" />
               <Setter Property="FontWeight" Value="Bold" />
               <Setter TargetName="line" Property="Fill" Value="{StaticResource Accent}" />
-            </Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="line" Property="Fill" Value="{StaticResource AccentLight}" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -381,9 +377,6 @@
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
               <Setter Property="Foreground" Value="{StaticResource Accent}" />
-            </Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="focus" Property="Visibility" Value="Visible" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
