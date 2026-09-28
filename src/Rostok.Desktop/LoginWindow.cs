@@ -53,7 +53,7 @@ public sealed class LoginWindow : Window
 
     private static FrameworkElement SidePanel()
     {
-        var panel = new DockPanel { Background = Theme.Soft };
+        var panel = new DockPanel { Background = Theme.ArtBg };
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(40, 40, 40, 0) };
         brand.Children.Add(new Image { Source = new BitmapImage(new Uri("pack://application:,,,/Rostok;component/Assets/logo.png")), Width = 40, Height = 40 });
         var bt = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -69,8 +69,8 @@ public sealed class LoginWindow : Window
         DockPanel.SetDock(foot, Dock.Bottom);
         panel.Children.Add(foot);
 
-        var art = new Image { Stretch = Stretch.Uniform, Margin = new Thickness(32, 24, 32, 24), VerticalAlignment = VerticalAlignment.Center };
-        try { art.Source = new BitmapImage(new Uri("pack://application:,,,/Rostok;component/Assets/login-art.png")); }
+        var art = new Image { Stretch = Stretch.Uniform, Margin = new Thickness(32, 24, 32, 24), VerticalAlignment = VerticalAlignment.Center, OpacityMask = Theme.ArtMask() };
+        try { art.Source = new BitmapImage(new Uri("pack://application:,,,/Rostok.Controls;component/Assets/Art/login.jpg")); }
         catch (Exception) { art.Source = new BitmapImage(new Uri("pack://application:,,,/Rostok;component/Assets/logo.png")); art.Width = 180; }
         panel.Children.Add(art);
         return panel;

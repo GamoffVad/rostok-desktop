@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Rostok.Setup</RootNamespace>
+    <AssemblyName>Rostok-Setup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\Rostok.Desktop\Assets\rostok.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>Установка «Ростка»</Product>
+    <Company>Росток</Company>
+    <SatelliteResourceLanguages>ru</SatelliteResourceLanguages>
+    <!-- пакет программы (zip опубликованного Rostok.Desktop), собирается скриптом build/build-installer.ps1 -->
+    <PayloadZip Condition="'$(PayloadZip)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\payload\Rostok.zip</PayloadZip>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Rostok.Controls\Rostok.Controls.csproj" />
+    <ProjectReference Include="..\Rostok.Licensing\Rostok.Licensing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\Rostok.Desktop\Assets\rostok.ico" Link="Assets\rostok.ico" />
+    <EmbeddedResource Include="$(PayloadZip)" LogicalName="Rostok.Setup.Payload.zip" Condition="Exists('$(PayloadZip)')" />
+  </ItemGroup>
+
+</Project>

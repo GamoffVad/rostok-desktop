@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Rostok.Core\Rostok.Core.csproj" />
     <ProjectReference Include="..\Rostok.Controls\Rostok.Controls.csproj" />
+    <ProjectReference Include="..\Rostok.Licensing\Rostok.Licensing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

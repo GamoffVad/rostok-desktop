@@ -12,7 +12,15 @@ public partial class App : Application
         base.OnStartup(e);
         Theme.Initialize();
         DispatcherUnhandledException += OnUnhandled;
-        if (!Shots.TryRun(e.Args)) AppHost.Start();
+        if (e.Args.Contains("--uninstall")) { UninstallWindow.Run(); return; }
+        if (Shots.TryRun(e.Args)) return;
+#if DEBUG
+        AppHost.Start();
+#else
+        // без действующей лицензии этого компьютера программа сначала просит активацию
+        if (Rostok.Licensing.License.IsActivated()) AppHost.Start();
+        else new ActivationWindow(AppHost.Start).Show();
+#endif
     }
 
     // Необработанная ошибка не закрывает программу молча: показываем текст, данные уже записаны построчно.

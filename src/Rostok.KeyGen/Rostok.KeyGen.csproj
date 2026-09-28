@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Rostok.KeyGen</RootNamespace>
+    <AssemblyName>Rostok-KeyGen</AssemblyName>
+    <ApplicationIcon>..\Rostok.Desktop\Assets\rostok.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>Генератор серийных номеров «Ростка»</Product>
+    <Company>Росток</Company>
+    <SatelliteResourceLanguages>ru</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Rostok.Controls\Rostok.Controls.csproj" />
+    <ProjectReference Include="..\Rostok.Licensing\Rostok.Licensing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\Rostok.Desktop\Assets\rostok.ico" Link="Assets\rostok.ico" />
+    <!-- секретный ключ подписи кладётся рядом с программой только при локальной сборке у администратора -->
+    <None Include="..\..\keys\rostok-license.private.pem" Link="rostok-license.private.pem" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\keys\rostok-license.private.pem')" />
+  </ItemGroup>
+
+</Project>

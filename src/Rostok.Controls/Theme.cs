@@ -35,6 +35,18 @@ public static class Theme
     public static readonly SolidColorBrush Danger = B("#A32D22");
     public static readonly SolidColorBrush Ok = B("#2C6B45");
     public static readonly SolidColorBrush Transparent = B("#00000000");
+    // Фон иллюстраций Higgsfield («меловая бумага»): под ним панели с картинками сливаются с изображением.
+    public static readonly SolidColorBrush ArtBg = B("#F5EDDB");
+
+    // Мягкие края иллюстрации: к краям картинка растворяется в фоне панели.
+    public static Brush ArtMask()
+    {
+        var b = new RadialGradientBrush { GradientOrigin = new System.Windows.Point(0.5, 0.5), RadiusX = 0.62, RadiusY = 0.62 };
+        b.GradientStops.Add(new GradientStop(Colors.Black, 0.72));
+        b.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 1.0));
+        b.Freeze();
+        return b;
+    }
 
     // Уровни 0–3: цифра на смысловой подложке — от нормы к выраженному несоответствию.
     public static readonly SolidColorBrush[] LevelInk = [B("#2C6B45"), B("#746410"), B("#9A5413"), B("#A32D22")];

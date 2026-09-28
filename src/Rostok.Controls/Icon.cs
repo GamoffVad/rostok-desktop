@@ -8,7 +8,7 @@ namespace Rostok.Controls;
 public enum IconKind
 {
     Plus, Trash, Pencil, Download, Upload, Database, Help, Print, Copy, Check, Arrow, ArrowBack, Table, Calendar,
-    ChevronLeft, ChevronRight, Gear, Logout, Folder, Lock, User, Refresh, Plug,
+    ChevronLeft, ChevronRight, Gear, Logout, Folder, Lock, User, Refresh, Plug, Close, Minus, Key,
 }
 
 // Иконки библиотеки: контур 24×24, штрих 1,7, скруглённые концы — те же пути, что в веб-версии (ui/Icons.jsx).
@@ -41,6 +41,9 @@ public class Icon : FrameworkElement
         [IconKind.User] = "M8 8 A4 4 0 1 0 16 8 A4 4 0 1 0 8 8 Z M5 20c.8-3.5 3.6-5 7-5s6.2 1.5 7 5",
         [IconKind.Refresh] = "M19 8a8 8 0 0 0-14 1M5 4v5h5M5 16a8 8 0 0 0 14-1M19 20v-5h-5",
         [IconKind.Plug] = "M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5",
+        [IconKind.Close] = "M6 6l12 12M18 6L6 18",
+        [IconKind.Minus] = "M5 12h14",
+        [IconKind.Key] = "M4 15.5 A3.5 3.5 0 1 0 11 15.5 A3.5 3.5 0 1 0 4 15.5 Z M10 13l8-8M15 8l2.5 2.5M17.5 5.5l2 2",
     };
 
     private static readonly Dictionary<IconKind, Geometry> Cache = [];
