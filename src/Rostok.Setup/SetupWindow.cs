@@ -180,14 +180,28 @@ public sealed class SetupWindow : Window
             case 2: Go(3); _ = RunInstall(); break;
             case 3: if (_error is not null) { _ = RunInstall(); } else Go(4); break;
             case 4:
-                if (_launch)
-                {
-                    try { Process.Start(new ProcessStartInfo(Path.Combine(_installDir, Installer.ExeName)) { UseShellExecute = true, WorkingDirectory = _installDir }); }
-                    catch (Exception) { /* запуск не обязателен */ }
-                }
-                Close();
+                // окно скрывается сразу: мастер не ждёт запуска программы
+                Hide();
+                if (_launch) LaunchAsUser(Path.Combine(_installDir, Installer.ExeName));
+                Application.Current.Shutdown();
                 break;
             default: Go(_step + 1); break;
+        }
+    }
+
+    // Установщик работает с правами администратора. Программу запускаем через Проводник — от имени обычного пользователя,
+    // как при открытии ярлыка: так она не получает лишних прав, а мастер не ждёт системного вызова «открыть файл».
+    private static void LaunchAsUser(string exe)
+    {
+        if (!File.Exists(exe)) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{exe}\"") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
+        }
+        catch (Exception)
+        {
+            try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! }); }
+            catch (Exception) { /* запуск не обязателен: программу можно открыть ярлыком */ }
         }
     }
 
@@ -324,6 +338,35 @@ public sealed class SetupWindow : Window
             Snapshot.Save(root, Path.Combine(dir, $"setup-{i + 1}.png"));
         }
         Application.Current.Shutdown();
+    }
+
+    // Самопроверка кнопок мастера без установки (режим --selftest <файл отчёта>).
+    public async Task SelfTest(string report)
+    {
+        var log = new List<string>();
+        Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        async Task Settle() { await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); await Task.Delay(150); }
+        void Press(Button b) => ((System.Windows.Automation.Provider.IInvokeProvider)new System.Windows.Automation.Peers.ButtonAutomationPeer(b).GetPattern(System.Windows.Automation.Peers.PatternInterface.Invoke)!).Invoke();
+        Go(0); await Settle();
+        Press(_next); await Settle();
+        log.Add($"{(_step == 1 ? "ok  " : "FAIL")} «Далее» на приветствии ведёт к активации");
+        _installed = true;
+        var fake = Environment.GetEnvironmentVariable("ROSTOK_SETUP_FAKE_DIR");
+        _launch = fake is not null;
+        if (fake is not null) _installDir = fake;
+        Go(4); await Settle();
+        log.Add($"{(_next.IsEnabled ? "ok  " : "FAIL")} кнопка «Готово» доступна");
+        // «Готово» скрывает окно, запускает программу и завершает установщик — итог пишем при завершении
+        Application.Current.Exit += (_, _) =>
+        {
+            log.Add($"{(!IsVisible ? "ok  " : "FAIL")} «Готово» скрывает окно и завершает установщик");
+            File.WriteAllLines(report, log);
+        };
+        Press(_next);
+        await Task.Delay(3000);
+        log.Add("FAIL «Готово» не завершил установщик за 3 секунды");
+        File.WriteAllLines(report, log);
+        Application.Current.Shutdown(1);
     }
 
     private async Task RunInstall()

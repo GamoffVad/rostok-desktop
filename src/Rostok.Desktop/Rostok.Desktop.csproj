@@ -9,7 +9,7 @@
     <RootNamespace>Rostok.Desktop</RootNamespace>
     <AssemblyName>Rostok</AssemblyName>
     <ApplicationIcon>Assets\rostok.ico</ApplicationIcon>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Product>Росток</Product>
     <Company>Росток</Company>
     <Description>Росток — мониторинг речевого и нейропсихологического развития детей для психолога и логопеда</Description>
