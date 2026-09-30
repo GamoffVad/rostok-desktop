@@ -53,6 +53,15 @@ public static class Installer
         catch (Exception) { return null; }
     }
 
+    // Нет окна и через полторы секунды — не запускается, а висит без окна.
+    private static bool IsWindowless(Process p)
+    {
+        if (p.MainWindowHandle != IntPtr.Zero) return false;
+        if (DateTime.Now - p.StartTime < TimeSpan.FromSeconds(10)) Thread.Sleep(1500);
+        p.Refresh();
+        return !p.HasExited && p.MainWindowHandle == IntPtr.Zero;
+    }
+
     public static void Install(InstallOptions o, IProgress<(double Value, string Text)> progress)
     {
         using var payload = OpenPayload()
@@ -64,8 +73,16 @@ public static class Installer
         {
             try
             {
-                if (string.Equals(p.MainModule?.FileName, target, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("«Росток» сейчас открыт. Закройте программу и нажмите «Установить» ещё раз.");
+                if (!string.Equals(p.MainModule?.FileName, target, StringComparison.OrdinalIgnoreCase)) continue;
+                // программа прежней версии могла остаться запущенной без окна (закрыли окно входа) — её закрываем сами
+                if (IsWindowless(p))
+                {
+                    progress.Report((0.03, "Закрываю «Росток», оставшийся запущенным без окна…"));
+                    p.Kill();
+                    p.WaitForExit(5000);
+                    continue;
+                }
+                throw new InvalidOperationException("«Росток» сейчас открыт. Закройте программу и нажмите «Установить» ещё раз.");
             }
             catch (System.ComponentModel.Win32Exception) { /* чужой процесс без доступа — пропускаем */ }
         }

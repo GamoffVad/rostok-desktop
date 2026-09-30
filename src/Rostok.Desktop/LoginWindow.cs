@@ -44,7 +44,9 @@ public sealed class LoginWindow : Window
         Content = grid;
 
         _mode = AppHost.Db is null ? Mode.Connection : AppHost.User is null ? Mode.Login : Mode.Choose;
-        Closed += (_, _) => { if (AppHost.Main is null && Application.Current.MainWindow == this) AppHost.Quit(); };
+        // закрыли окно входа, а окна программы нет — выходим. Application.MainWindow к этому моменту WPF уже сбрасывает,
+        // поэтому сверяемся с тем, какое окно входа считается текущим
+        Closed += (_, _) => { if (AppHost.Main is null && AppHost.IsCurrentLogin(this)) AppHost.Quit(); };
         Render();
     }
 

@@ -69,6 +69,8 @@ public static class AppHost
     // самопроверка и снимки не трогают настройки этого компьютера
     internal static bool Ephemeral { get; set; }
 
+    internal static bool IsCurrentLogin(LoginWindow w) => ReferenceEquals(_login, w);
+
     public static void ShowLogin()
     {
         _login = new LoginWindow();
@@ -172,15 +174,17 @@ public static class AppHost
         main?.Close();
     }
 
-    // Выход: следующий вход — снова с логином и паролем.
+    // Выход: следующий вход — снова с логином и паролем. Прежнее окно входа (выбор пространства) закрывается.
     public static void SignOut()
     {
         var main = Main;
+        var login = _login;
         Main = null;
         Store = HomeStore = null;
         User = null;
         ShowLogin();
         main?.Close();
+        login?.Close();
     }
 
     // Новое подключение к базе: сохраняем путь этого компьютера (null — путь по умолчанию) и открываем базу заново.

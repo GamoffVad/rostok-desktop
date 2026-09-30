@@ -14,6 +14,8 @@ public partial class App : Application
         DispatcherUnhandledException += OnUnhandled;
         if (e.Args.Contains("--uninstall")) { UninstallWindow.Run(); return; }
         if (Shots.TryRun(e.Args) || SelfTest.TryRun(e.Args)) return;
+        // запасной выход: когда закрыто последнее окно, программа завершается и не остаётся висеть без окна
+        ShutdownMode = ShutdownMode.OnLastWindowClose;
 #if DEBUG
         AppHost.Start();
 #else
