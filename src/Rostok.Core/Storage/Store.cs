@@ -35,21 +35,41 @@ public sealed class Store
     // Текст последней ошибки записи: база недоступна, файл занят, нет прав на папку…
     public string? SaveError { get; private set; }
 
+    // Только чтение: руководитель смотрит пространство сотрудника — ни одно действие ничего не меняет ни в памяти, ни в базе.
+    public bool ReadOnly { get; }
+
     public event Action? Changed;
     public event Action? UiChanged;
+    // Попытка изменить данные в режиме только чтения.
+    public event Action? Blocked;
 
-    private Store(Database db, string workspaceId, string name)
+    private readonly bool _applyDicts;
+
+    private Store(Database db, string workspaceId, string name, bool readOnly, bool applyDicts)
     {
         Db = db;
         WorkspaceId = workspaceId;
         WorkspaceName = name;
+        ReadOnly = readOnly;
+        _applyDicts = applyDicts;
     }
 
-    public static Store Open(Database db, string workspaceId, string name)
+    // applyDicts = false — только прочитать данные (сводка по организации), не трогая словари открытого пространства.
+    public static Store Open(Database db, string workspaceId, string name, bool readOnly = false, bool applyDicts = true)
     {
-        var store = new Store(db, workspaceId, name);
+        var store = new Store(db, workspaceId, name, readOnly, applyDicts);
         store.Reload();
         return store;
+    }
+
+    // Словари — общий реестр программы: при переключении между своим и чужим пространством накладываем словари активного.
+    public void Activate() => Dicts.Apply(Data.Dicts);
+
+    private bool Deny()
+    {
+        if (!ReadOnly) return false;
+        Blocked?.Invoke();
+        return true;
     }
 
     // ── Загрузка ─────────────────────────────────────────
@@ -89,7 +109,7 @@ public sealed class Store
         Ui = settings.TryGetValue("ui", out var uj) ? JsonSerializer.Deserialize<UiState>(uj, Json) ?? new UiState() : new UiState();
 
         Data = data;
-        Dicts.Apply(Data.Dicts);
+        if (_applyDicts) Dicts.Apply(Data.Dicts);
         Changed?.Invoke();
     }
 
@@ -244,12 +264,15 @@ public sealed class Store
     public void SetUi(Action<UiState> patch)
     {
         patch(Ui);
+        // выбор руководителя на экранах не записывается в настройки сотрудника
+        if (ReadOnly) { UiChanged?.Invoke(); return; }
         Persist((c, tx) => WriteSetting(c, tx, "ui", JsonSerializer.Serialize(Ui, Json)));
         UiChanged?.Invoke();
     }
 
     public Group AddGroup(string name)
     {
+        if (Deny()) return new Group { Name = name.Trim() };
         var group = new Group { Id = Ids.New(), Name = name.Trim() };
         var newPeriods = Data.Periods.Count == 0 ? Calc.YearPeriods(Calc.CurrentAcademicYear()) : [];
         Data.Groups.Add(group);
@@ -264,6 +287,7 @@ public sealed class Store
 
     public void RenameGroup(string id, string name)
     {
+        if (Deny()) return;
         var g = Data.Group(id);
         if (g is null) return;
         g.Name = name.Trim();
@@ -272,6 +296,7 @@ public sealed class Store
 
     public void RemoveGroup(string id)
     {
+        if (Deny()) return;
         var kids = Data.Children.Where(c => c.GroupId == id).Select(c => c.Id).ToList();
         Data.Groups.RemoveAll(g => g.Id == id);
         Data.Children.RemoveAll(c => c.GroupId == id);
@@ -285,6 +310,7 @@ public sealed class Store
 
     public Child AddChild(Child child)
     {
+        if (Deny()) return child;
         if (string.IsNullOrEmpty(child.Id)) child.Id = Ids.New();
         Data.Children.Add(child);
         Commit((c, tx) => WriteChild(c, tx, child));
@@ -293,6 +319,7 @@ public sealed class Store
 
     public void AddChildren(string groupId, IEnumerable<string> names)
     {
+        if (Deny()) return;
         var list = names.Select(n => new Child { Id = Ids.New(), GroupId = groupId, Name = n }).ToList();
         Data.Children.AddRange(list);
         Commit((c, tx) => { foreach (var ch in list) WriteChild(c, tx, ch); });
@@ -300,6 +327,7 @@ public sealed class Store
 
     public void UpdateChild(string id, Action<Child> patch)
     {
+        if (Deny()) return;
         var ch = Data.Child(id);
         if (ch is null) return;
         patch(ch);
@@ -308,6 +336,7 @@ public sealed class Store
 
     public void RemoveChild(string id)
     {
+        if (Deny()) return;
         Data.Children.RemoveAll(c => c.Id == id);
         Data.Scores.Remove(id); Data.Notes.Remove(id); Data.Programs.Remove(id);
         Commit((c, tx) => DeleteChildRows(c, tx, id));
@@ -315,6 +344,7 @@ public sealed class Store
 
     public void AddYear(string year)
     {
+        if (Deny()) return;
         if (Data.Periods.Any(p => p.Year == year)) return;
         var periods = Calc.YearPeriods(year);
         var start = Data.Periods.Count;
@@ -324,6 +354,7 @@ public sealed class Store
 
     public void RemoveYear(string year)
     {
+        if (Deny()) return;
         var gone = Data.Periods.Where(p => p.Year == year).Select(p => p.Id).ToHashSet();
         Data.Periods.RemoveAll(p => gone.Contains(p.Id));
         foreach (var byPeriod in Data.Scores.Values) foreach (var id in gone) byPeriod.Remove(id);
@@ -342,6 +373,7 @@ public sealed class Store
 
     public void SetScore(string childId, string periodId, string itemId, string? value)
     {
+        if (Deny()) return;
         var bucket = ScoreBucket(Data, childId, periodId);
         if (value is null) bucket.Remove(itemId); else bucket[itemId] = value;
         Commit((c, tx) => WriteScore(c, tx, childId, periodId, itemId, value));
@@ -350,6 +382,7 @@ public sealed class Store
     // Несколько отметок разом: null стирает пробу.
     public void SetMany(string childId, string periodId, IReadOnlyDictionary<string, string?> patch)
     {
+        if (Deny()) return;
         var bucket = ScoreBucket(Data, childId, periodId);
         foreach (var (k, v) in patch) { if (v is null) bucket.Remove(k); else bucket[k] = v; }
         Commit((c, tx) => { foreach (var (k, v) in patch) WriteScore(c, tx, childId, periodId, k, v); });
@@ -357,12 +390,14 @@ public sealed class Store
 
     public void SetNote(string childId, string periodId, string text)
     {
+        if (Deny()) return;
         Bucket(Data.Notes, childId)[periodId] = text;
         Commit((c, tx) => WriteNote(c, tx, childId, periodId, text));
     }
 
     public void SetProgram(string childId, string periodId, Action<ChildProgram> patch)
     {
+        if (Deny()) return;
         var byPeriod = Bucket(Data.Programs, childId);
         if (!byPeriod.TryGetValue(periodId, out var prog)) byPeriod[periodId] = prog = new ChildProgram();
         patch(prog);
@@ -371,6 +406,7 @@ public sealed class Store
 
     public void SetExercise(string itemId, string text)
     {
+        if (Deny()) return;
         // первая правка превращает образцы в свою библиотеку
         var first = Data.Library is null;
         Data.Library ??= new Dictionary<string, string>(M.ExampleLibrary);
@@ -385,6 +421,7 @@ public sealed class Store
 
     public void SetLibrary(Dictionary<string, string>? library)
     {
+        if (Deny()) return;
         Data.Library = library is null ? null : new Dictionary<string, string>(library);
         Commit((c, tx) => WriteLibrary(c, tx, Data.Library));
     }
@@ -398,6 +435,7 @@ public sealed class Store
     // Правка словаря: значение, совпавшее с умолчанием, не хранится.
     public void SetDictValue(string dictId, string row, string field, string value, string def)
     {
+        if (Deny()) return;
         var dict = Data.Dicts[dictId] as JsonObject ?? [];
         var fields = dict[row] as JsonObject ?? [];
         if (value == def) fields.Remove(field); else fields[field] = value;
@@ -410,6 +448,7 @@ public sealed class Store
 
     public void SetDictList(string dictId, List<string> list)
     {
+        if (Deny()) return;
         Data.Dicts.Remove(dictId);
         Data.Dicts[dictId] = new JsonArray(list.Select(s => (JsonNode?)JsonValue.Create(s)).ToArray());
         SaveDicts();
@@ -417,6 +456,7 @@ public sealed class Store
 
     public void ResetDict(string dictId)
     {
+        if (Deny()) return;
         Data.Dicts.Remove(dictId);
         SaveDicts();
     }
@@ -424,6 +464,7 @@ public sealed class Store
     // Восстановление из копии: все данные пространства заменяются содержимым файла.
     public void ReplaceAll(WorkspaceData next)
     {
+        if (Deny()) return;
         Data = new WorkspaceData();
         Persist((c, tx) =>
         {
@@ -439,6 +480,7 @@ public sealed class Store
     // Добавление группы из Excel или примера: существующие данные не трогаются.
     public void Merge(WorkspaceData part)
     {
+        if (Deny()) return;
         var newPeriods = part.Periods.Where(p => Data.Periods.All(q => q.Id != p.Id)).ToList();
         var toWrite = new WorkspaceData
         {
@@ -459,6 +501,7 @@ public sealed class Store
     // Само рабочее пространство, его пароль и выбор на экранах остаются.
     public void Clear()
     {
+        if (Deny()) return;
         Data = new WorkspaceData();
         Persist((c, tx) =>
         {

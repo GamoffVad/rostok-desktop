@@ -197,22 +197,42 @@ public sealed class LoginWindow : Window
         Ui.SetPlaceholder(repeat, "ещё раз");
         var demo = new Checkbox("Добавить группу-пример с вымышленными детьми", true);
 
-        var pwdRow = new Grid();
-        pwdRow.ColumnDefinitions.Add(new ColumnDefinition());
-        pwdRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-        pwdRow.ColumnDefinitions.Add(new ColumnDefinition());
-        pwdRow.Children.Add(Ui.Field("Пароль", pwd));
-        var rf = Ui.Field("Повторите пароль", repeat);
-        Grid.SetColumn(rf, 2);
-        pwdRow.Children.Add(rf);
+        static Grid Pair(UIElement left, UIElement right)
+        {
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.Children.Add(left);
+            Grid.SetColumn(right, 2);
+            g.Children.Add(right);
+            return g;
+        }
+        var pwdRow = Pair(Ui.Field("Пароль", pwd), Ui.Field("Повторите пароль", repeat));
+
+        // Новая база: первый, кто создаёт пространство, может сразу задать пароль администратора базы —
+        // он нужен, чтобы назначить руководителя (старшего специалиста). Можно оставить пустым и задать позже.
+        var hasAny = List().Count > 0;
+        var askAdmin = !hasAny && !new Workspaces(AppHost.Db!).HasAdminPassword();
+        var admin = new PasswordBox();
+        Ui.SetPlaceholder(admin, "можно задать позже");
+        var adminRepeat = new PasswordBox();
+        Ui.SetPlaceholder(adminRepeat, "ещё раз");
 
         void Create()
         {
             var ws = new Workspaces(AppHost.Db!);
             _error = ws.ValidateName(name.Text) ?? Workspaces.ValidatePassword(pwd.Password, repeat.Password);
+            var withAdmin = askAdmin && (admin.Password.Length > 0 || adminRepeat.Password.Length > 0);
+            if (_error is null && withAdmin)
+            {
+                _error = Workspaces.ValidatePassword(admin.Password, adminRepeat.Password) is { } adminError ? $"Пароль администратора базы: {adminError}" : null;
+                if (_error is null && admin.Password == pwd.Password) _error = "Пароль администратора базы должен отличаться от пароля пространства.";
+            }
             if (_error is not null) { ShowError(); return; }
             try
             {
+                if (withAdmin) ws.SetAdminPassword(null, admin.Password);
                 var id = ws.Create(name.Text, pwd.Password);
                 if (demo.IsChecked == true)
                 {
@@ -230,20 +250,24 @@ public sealed class LoginWindow : Window
             err.Children.Clear();
             if (_error is not null) err.Children.Add(Ui.Status(_error, false).Margin(0, 10, 0, 0));
         }
-        repeat.KeyDown += (_, e) => { if (e.Key == Key.Enter) Create(); };
+        repeat.KeyDown += (_, e) => { if (e.Key == Key.Enter && !askAdmin) Create(); };
+        adminRepeat.KeyDown += (_, e) => { if (e.Key == Key.Enter) Create(); };
 
         var form = Ui.VStack(12,
             Ui.Field("Название рабочего пространства", name),
             pwdRow,
+            askAdmin ? Ui.VStack(6,
+                Ui.H3("Администратор базы").Margin(0, 10, 0, 0),
+                Ui.Faint("База новая. Пароль администратора нужен, чтобы назначить руководителя — старшего специалиста, который видит пространства всех сотрудников. Это не пароль пространства: храните его отдельно.").With(t => t.TextWrapping = TextWrapping.Wrap),
+                Pair(Ui.Field("Пароль администратора базы", admin), Ui.Field("Повторите", adminRepeat))) : null,
             demo);
         form.Margin = new Thickness(0, 22, 0, 0);
         s.Children.Add(form);
-        var hasAny = List().Count > 0;
         var btns = Ui.Row(8, Ui.Primary("Создать и войти", Create, IconKind.Plus), hasAny ? Ui.Ghost("Отмена", () => { _mode = Mode.Enter; _error = null; Render(); }) : null);
         btns.Margin = new Thickness(0, 16, 0, 0);
         s.Children.Add(btns);
         s.Children.Add(err);
-        s.Children.Add(Ui.HelpNote(Ui.Faint("Пароль восстановить нельзя: он хранится в базе только в виде хеша. Запишите его в надёжном месте. Сменить пароль можно в «Администрирование → Рабочее пространство».")));
+        s.Children.Add(Ui.HelpNote(Ui.Faint("Пароль восстановить нельзя: он хранится в базе только в виде хеша. Запишите его в надёжном месте. Сменить пароль можно в «Администрирование → Рабочее пространство»; забытый пароль может сбросить руководитель, если он назначен.")));
         s.Children.Add(Footer());
         Dispatcher.BeginInvoke(() => name.Focus(), System.Windows.Threading.DispatcherPriority.Input);
         return s;

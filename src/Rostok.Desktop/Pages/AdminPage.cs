@@ -17,21 +17,28 @@ public sealed class AdminPage(Route route) : PageBase(route)
         ("dicts", "Словари", "Все словарные значения приложения: названия уровней и этапов, разделов и проб, итогов, направлений работы, подсказки для контактов родителей. Правки действуют только в вашем рабочем пространстве."),
         ("ui", "Компоненты", "Библиотека компонентов «Росток»: из неё собраны все экраны. Каждый элемент — вживую и во всех состояниях."),
         ("workspace", "Рабочее пространство", "Название и пароль вашего рабочего пространства. Все группы, дети, баллы, упражнения, словари и настройки хранятся только в нём."),
+        ("org", "Организация", "Пароль администратора базы и роль «Руководитель»: старший специалист видит пространства всех сотрудников без их паролей — только для просмотра."),
         ("connection", "Подключение", "Файл базы данных, с которым работает программа на этом компьютере: локально или в общей папке локальной сети."),
     ];
+
+    // В режиме просмотра чужого пространства — только словари (для чтения) и витрина компонентов.
+    private static readonly string[] ViewTabs = ["dicts", "ui"];
 
     private DataTab? _data;
     private DictsTab? _dicts;
     private ComponentsTab? _kit;
     private WorkspaceTab? _ws;
+    private OrgTab? _org;
 
     protected override UIElement Build()
     {
-        var tab = Tabs.FirstOrDefault(t => t.Id == Route.Part(1));
-        if (tab.Id is null) tab = Tabs[0];
+        var tabs = ViewOnly ? Tabs.Where(t => ViewTabs.Contains(t.Id)).ToArray() : Tabs;
+        var tab = tabs.FirstOrDefault(t => t.Id == Route.Part(1));
+        if (tab.Id is null) tab = tabs[0];
         UIElement body = tab.Id switch
         {
             "dicts" => (_dicts ??= new DictsTab(Refresh)).Build(),
+            "org" => (_org ??= new OrgTab(Refresh)).Build(),
             "ui" => (_kit ??= new ComponentsTab()).Build(),
             "workspace" => (_ws ??= new WorkspaceTab(Refresh)).Build(),
             "connection" => ConnectionTab(),
@@ -39,7 +46,7 @@ public sealed class AdminPage(Route route) : PageBase(route)
         };
         return Page(
             PageHeader("Администрирование", tab.Subtitle),
-            new TabBar(Tabs.Select(t => new TabSpec(t.Id, t.Label)), tab.Id, k => Go($"/admin/{k}")),
+            new TabBar(tabs.Select(t => new TabSpec(t.Id, t.Label)), tab.Id, k => Go($"/admin/{k}")),
             new Border { Margin = new Thickness(0, 20, 0, 0), Child = body });
     }
 
@@ -238,6 +245,21 @@ public sealed class WorkspaceTab(Action refresh)
         }
         else del.Children.Add(Ui.Ghost("Удалить рабочее пространство", () => { _askDelete = true; refresh(); }, IconKind.Trash).With(b => b.HorizontalAlignment = HorizontalAlignment.Left));
         page.Children.Add(Ui.Card(del));
+
+        // журнал: когда руководитель открывал это пространство или сбрасывал пароль
+        var log = ws.AccessLog(S.WorkspaceId);
+        var journal = new StackPanel();
+        journal.Children.Add(Ui.BlockHead(Ui.H2("Журнал просмотров руководителем")));
+        if (log.Count == 0) journal.Children.Add(Ui.Faint("Руководитель ещё не открывал ваше пространство."));
+        else
+        {
+            var t = new Tbl(Col.Auto(), Col.Star(), Col.Star());
+            t.Header("Когда", "Кто", "Что");
+            foreach (var e in log) t.Row(Ui.Num(e.At.ToString("dd.MM.yyyy HH:mm"), Theme.Ink3, 12), e.ViewerName, e.ActionText);
+            journal.Children.Add(t);
+            journal.Children.Add(Ui.Faint($"Показаны последние {log.Count} записей.").Margin(0, 8, 0, 0));
+        }
+        page.Children.Add(Ui.Card(journal));
         return page;
     }
 }

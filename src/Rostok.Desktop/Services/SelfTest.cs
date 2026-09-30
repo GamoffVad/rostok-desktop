@@ -155,6 +155,61 @@ public static class SelfTest
             var back = Backup.Import(json);
             Check(back.Children.Count == s.Data.Children.Count, "резервная копия выгружается и читается");
 
+            // Руководитель: роль — только паролем администратора базы
+            ws.SetAdminPassword(null, "admin-1");
+            var denied = false;
+            try { ws.SetRole(id, Roles.Supervisor, "не тот"); } catch (Exception) { denied = true; }
+            Check(denied && !ws.Get(id)!.IsSupervisor, "руководитель: без пароля администратора роль не назначается");
+            ws.SetRole(id, Roles.Supervisor, "admin-1");
+            Store.Open(db, other, "Другой сотрудник").Merge(Demo.Build());
+            // новое окно открываем до закрытия старого: закрытие главного окна завершает программу
+            var oldMain = main;
+            AppHost.SignInForShots(id, "Проверка");
+            oldMain.Close();
+            main = AppHost.Main!;
+            main.Left = -20000;
+            await Settle();
+            main.Navigate(Route.Of("/org"));
+            await Settle();
+            Check(AppHost.IsSupervisor && Find<OrganizationPage>(main).Any(), "руководитель: открывается экран «Организация»");
+
+            // Просмотр пространства сотрудника: ничего нельзя изменить
+            Click(ButtonWithText(main, "открыть для просмотра"));
+            await Settle();
+            var vs = AppHost.Store!;
+            Check(AppHost.IsViewing && vs.ReadOnly && vs.WorkspaceId == other && vs.Data.Children.Count == 12, "руководитель: пространство сотрудника открывается только для просмотра");
+            var vChild = vs.Data.ChildrenOf(vs.Data.Groups[0].Id)[0];
+            var vPeriod = vs.Data.Periods[3];
+            vs.SetUi(u => { u.PeriodId = vPeriod.Id; u.SectionId = "phon"; });
+            var vBefore = vs.Data.ScoresOf(vChild.Id, vPeriod.Id).OrderBy(kv => kv.Key).ToList();
+            main.Navigate(Route.Of("/exam", ("child", vChild.Id)));
+            await Settle();
+            Key(Find<ExamPage>(main).First(), System.Windows.Input.Key.D3);
+            Click(Find<Button>(main).First(b => b.Style == Ui.Style("Mark")));
+            await Settle();
+            var stored = Store.Open(db, other, "Другой сотрудник", readOnly: true, applyDicts: false);
+            Check(vs.Data.ScoresOf(vChild.Id, vPeriod.Id).OrderBy(kv => kv.Key).SequenceEqual(vBefore)
+                && stored.Data.ScoresOf(vChild.Id, vPeriod.Id).OrderBy(kv => kv.Key).SequenceEqual(vBefore), "просмотр: отметка и клавиши не меняют баллы ни в окне, ни в базе");
+            Check(!Find<Button>(main).Any(b => Find<TextBlock>(b).Any(t => t.Text is "всё в норме" or "очистить раздел")), "просмотр: кнопки правки скрыты");
+            Check(stored.Ui.SectionId != "phon", "просмотр: выбор раздела не записывается в настройки сотрудника");
+            foreach (var r in new[] { "/", "/protocol", "/dynamics", $"/child/{vChild.Id}", "/library", "/admin/dicts" })
+            {
+                main.Navigate(Route.Of(r));
+                await Settle();
+            }
+            Check(AppHost.IsViewing, "просмотр: экраны сотрудника открываются");
+
+            AppHost.ReturnToOwn();
+            await Settle();
+            Check(!AppHost.IsViewing && ReferenceEquals(AppHost.Store, AppHost.OwnStore) && AppHost.Store!.WorkspaceId == id && Find<OrganizationPage>(main).Any(), "руководитель: возврат в своё пространство");
+            var log = ws.AccessLog(other);
+            Check(log.Count == 1 && log[0].ViewerName == "Проверка" && log[0].Action == "view", "журнал: просмотр записан в журнал сотрудника");
+            ws.ResetPassword(other, "9999", id, "Проверка");
+            Check(ws.Verify(other, "9999") && !ws.Verify(other, "5678") && ws.AccessLog(other).Count == 2, "руководитель: сброс пароля сотрудника записан в журнал");
+            main.Navigate(Route.Of("/admin/org"));
+            await Settle();
+            Check(true, "экран /admin/org открывается");
+
             main.Close();
         }
         catch (Exception e)

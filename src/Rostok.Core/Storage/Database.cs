@@ -7,7 +7,8 @@ namespace Rostok.Core.Storage;
 // Если файла нет, он создаётся при первом открытии вместе со всеми таблицами.
 public sealed class Database
 {
-    public const int SchemaVersion = 1;
+    // 1 — первая версия; 2 — роль пространства (руководитель) и журнал просмотров
+    public const int SchemaVersion = 2;
 
     public string Path { get; }
     private readonly string _connectionString;
@@ -35,9 +36,25 @@ public sealed class Database
         using var c = Open();
         using var tx = c.BeginTransaction();
         Exec(c, tx, LoadSchema());
+        Migrate(c, tx);
         Exec(c, tx, "INSERT INTO meta(key, value) VALUES ('schema_version', $v) ON CONFLICT(key) DO UPDATE SET value = excluded.value", ("$v", SchemaVersion.ToString()));
         Exec(c, tx, "INSERT OR IGNORE INTO meta(key, value) VALUES ('created_at', $v)", ("$v", DateTime.Now.ToString("s")));
         tx.Commit();
+    }
+
+    // Базы прежних версий: CREATE TABLE IF NOT EXISTS не добавляет новых колонок — дописываем их сами.
+    private static void Migrate(SqliteConnection c, SqliteTransaction tx)
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var cmd = c.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "PRAGMA table_info(workspaces)";
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) columns.Add(r.GetString(1));
+        }
+        if (!columns.Contains("role"))
+            Exec(c, tx, "ALTER TABLE workspaces ADD COLUMN role TEXT NOT NULL DEFAULT 'employee'");
     }
 
     public SqliteConnection Open()

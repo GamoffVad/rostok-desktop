@@ -15,6 +15,7 @@ public sealed class ProgramTab(Child child, List<Period> filled, Action refresh)
     private string? _editing;
     private static Store S => AppHost.Store!;
     private static WorkspaceData D => S.Data;
+    private static bool ViewOnly => S.ReadOnly;
 
     public UIElement Build()
     {
@@ -28,7 +29,7 @@ public sealed class ProgramTab(Child child, List<Period> filled, Action refresh)
         var page = new StackPanel();
         var bar = new FilterBar { Fit = true, Borders = Sides.Bottom };
         bar.Children.Add(new FilterCard("Срез обследования", new Dropdown(filled.Select(p => new DropdownOption(p.Id, p.Label)), period.Id, v => { _periodId = (string?)v; refresh(); }, label: "Срез")));
-        bar.Children.Add(new FilterCard("Что считать дефицитом", new Dropdown(M.Thresholds.Select(t => new DropdownOption(t.Value, t.Label)), program.Threshold, v => { Set(p => p.Threshold = (int)v!); refresh(); }, label: "Порог") { MinWidth = 300 }, wide: true));
+        bar.Children.Add(new FilterCard("Что считать дефицитом", new Dropdown(M.Thresholds.Select(t => new DropdownOption(t.Value, t.Label)), program.Threshold, v => { Set(p => p.Threshold = (int)v!); refresh(); }, label: "Порог") { MinWidth = 300, IsEnabled = !ViewOnly }, wide: true));
         bar.Children.Add(new FilterCard("В программе", FilterCard.Value($"{program.Active} из {program.Total} проб")));
         page.Children.Add(bar);
 
@@ -37,7 +38,9 @@ public sealed class ProgramTab(Child child, List<Period> filled, Action refresh)
             Ui.Ghost("Отчёт для родителей", () => AppHost.Main?.Navigate(Route.Of($"/parent/{child.Id}", ("period", period.Id)))));
         toolbar.Margin = new Thickness(0, 18, 0, 6);
         page.Children.Add(toolbar);
-        page.Children.Add(Ui.Faint("Программа строится по пробам с дефицитом: звуки — все, кроме нормы; остальные пробы — по выбранному порогу. Снимите отметку, чтобы исключить пробу; допишите свои упражнения к пробе или общие рекомендации внизу — всё сохраняется сразу.")
+        page.Children.Add(Ui.Faint(ViewOnly
+                ? "Программа строится по пробам с дефицитом: звуки — все, кроме нормы; остальные пробы — по выбранному порогу. Отметки и дополнения сотрудника — только просмотр."
+                : "Программа строится по пробам с дефицитом: звуки — все, кроме нормы; остальные пробы — по выбранному порогу. Снимите отметку, чтобы исключить пробу; допишите свои упражнения к пробе или общие рекомендации внизу — всё сохраняется сразу.")
             .With(t => { t.MaxWidth = 680; t.HorizontalAlignment = HorizontalAlignment.Left; t.Margin = new Thickness(0, 6, 0, 6); }));
 
         if (program.Total == 0)
@@ -71,8 +74,12 @@ public sealed class ProgramTab(Child child, List<Period> filled, Action refresh)
         recs.MinHeight = home.MinHeight = 130;
         var saveRecs = Ui.Debounce<string>(v => Set(p => p.Recs = v));
         var saveHome = Ui.Debounce<string>(v => Set(p => p.Home = v));
-        recs.TextChanged += (_, _) => saveRecs(recs.Text);
-        home.TextChanged += (_, _) => saveHome(home.Text);
+        if (ViewOnly) recs.IsReadOnly = home.IsReadOnly = true;
+        else
+        {
+            recs.TextChanged += (_, _) => saveRecs(recs.Text);
+            home.TextChanged += (_, _) => saveHome(home.Text);
+        }
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
@@ -97,7 +104,7 @@ public sealed class ProgramTab(Child child, List<Period> filled, Action refresh)
         badge.Margin = new Thickness(10, 0, 0, 0);
         content.Children.Add(badge);
         content.Children.Add(label);
-        var check = new Checkbox { IsChecked = !it.Off, Content = content, HorizontalContentAlignment = HorizontalAlignment.Stretch, MinHeight = 38 };
+        var check = new Checkbox { IsChecked = !it.Off, Content = content, HorizontalContentAlignment = HorizontalAlignment.Stretch, MinHeight = 38, IsHitTestVisible = !ViewOnly, Focusable = !ViewOnly };
         check.Click += (_, _) =>
         {
             set(p => { if (!p.Off.Remove(it.Item.Id)) p.Off.Add(it.Item.Id); });
@@ -113,8 +120,8 @@ public sealed class ProgramTab(Child child, List<Period> filled, Action refresh)
             if (lines.Count > 0) body.Children.Add(ExerciseList(lines));
             else
             {
-                var add = Ui.TextAction("Добавить в библиотеку", () => { S.SetUi(u => u.LibrarySection = section.Id); AppHost.Main?.Navigate(Route.Of("/library")); });
-                add.Foreground = Theme.Accent;
+                UIElement? add = ViewOnly ? null : Ui.TextAction("Добавить в библиотеку", () => { S.SetUi(u => u.LibrarySection = section.Id); AppHost.Main?.Navigate(Route.Of("/library")); });
+                if (add is Control addLink) addLink.Foreground = Theme.Accent;
                 body.Children.Add(Ui.Row(6, Ui.Faint("Упражнения для этой пробы ещё не заданы.").With(t => t.VerticalAlignment = VerticalAlignment.Center), add));
             }
             var note = saved.Notes.GetValueOrDefault(it.Item.Id) ?? "";
@@ -122,12 +129,13 @@ public sealed class ProgramTab(Child child, List<Period> filled, Action refresh)
             {
                 var box = Ui.Input(note, "Своё упражнение для этого ребёнка, дозировка, материал — каждое с новой строки", null, multiline: true, rows: 2);
                 box.Margin = new Thickness(0, 4, 0, 0);
-                box.TextChanged += (_, _) => saveNote((it.Item.Id, box.Text));
+                if (ViewOnly) box.IsReadOnly = true;
+                else box.TextChanged += (_, _) => saveNote((it.Item.Id, box.Text));
                 box.LostKeyboardFocus += (_, _) => _editing = null;
                 if (_editing == it.Item.Id) box.Loaded += (_, _) => box.Focus();
                 body.Children.Add(box);
             }
-            else body.Children.Add(Ui.TextAction("+ дополнить для этого ребёнка", () => { _editing = it.Item.Id; refresh(); }));
+            else if (!ViewOnly) body.Children.Add(Ui.TextAction("+ дополнить для этого ребёнка", () => { _editing = it.Item.Id; refresh(); }));
             s.Children.Add(body);
         }
         return new Border

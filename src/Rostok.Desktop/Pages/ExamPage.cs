@@ -68,7 +68,9 @@ public sealed class ExamPage : PageBase
         nextBtn.IsEnabled = idx < kids.Count - 1;
 
         var page = Page(
-            PageHeader("Обследование", "Отмечайте балл нажатием или с клавиатуры: цифра ставит отметку и переходит к следующей пробе, стрелки ↑ ↓ — перемещение, Backspace — очистить. Всё сохраняется сразу.", prevBtn, nextBtn),
+            PageHeader("Обследование", ViewOnly
+                ? "Отметки сотрудника по пробам раздела — только просмотр. Стрелки ↑ ↓ — перемещение по пробам."
+                : "Отмечайте балл нажатием или с клавиатуры: цифра ставит отметку и переходит к следующей пробе, стрелки ↑ ↓ — перемещение, Backspace — очистить. Всё сохраняется сразу.", prevBtn, nextBtn),
             Filters(false,
                 GroupFilter(S.SelectedGroup),
                 new FilterCard($"Ребёнок · {idx + 1} из {kids.Count}", new Dropdown(kids.Select(c => new DropdownOption(c.Id, c.Name)), child.Id, v => Go("/exam", ("child", (string?)v)), label: "Ребёнок"), wide: true),
@@ -85,7 +87,7 @@ public sealed class ExamPage : PageBase
             title.Children.Add(Ui.HStack(6, Ui.Num($"ср. {Calc.Fmt(stats.Mean)}", Theme.Ink3, 15, FontWeights.Medium).With(t => t.VerticalAlignment = VerticalAlignment.Center), new Level(stats.Level)).Margin(10, 0, 0, 0));
         string? normValue = section.Kind switch { Kinds.Scale => "0", Kinds.Sound => "norm", Kinds.YesNo => "no", _ => null };
         var prevHasData = prevScores is not null && items.Any(i => prevScores.ContainsKey(i.Id));
-        var tools = Ui.HStack(12,
+        var tools = ViewOnly ? null : Ui.HStack(12,
             normValue is null ? null : Ui.TextAction(section.Kind == Kinds.YesNo ? "везде «нет»" : "всё в норме", () => FillAll(child, period, items, normValue)),
             prevHasData ? Ui.TextAction($"как на срезе {prevPeriod!.Label}", () =>
             {
@@ -146,9 +148,10 @@ public sealed class ExamPage : PageBase
             b.Click += (_, _) => SetSection(sid);
             aside.Children.Add(b);
         }
-        var notes = Ui.Input(D.NoteOf(child.Id, period.Id), "Поведение на обследовании, контакт, утомляемость…", null, multiline: true, rows: 4);
+        var notes = Ui.Input(D.NoteOf(child.Id, period.Id), ViewOnly ? "наблюдений нет" : "Поведение на обследовании, контакт, утомляемость…", null, multiline: true, rows: 4);
         notes.MinHeight = 100;
-        notes.TextChanged += (_, _) => _saveNote((child.Id, period.Id, notes.Text));
+        if (ViewOnly) notes.IsReadOnly = true;
+        else notes.TextChanged += (_, _) => _saveNote((child.Id, period.Id, notes.Text));
         aside.Children.Add(Ui.Field("Наблюдения на срезе", notes).Margin(0, 16, 0, 0));
         aside.Children.Add(Ui.TextAction("открыть заключение", () => Go($"/child/{child.Id}", ("tab", "report"))));
 
@@ -181,6 +184,8 @@ public sealed class ExamPage : PageBase
                 Margin = new Thickness(marks is StackPanel && marks.Children.Count > 0 ? 6 : 0, 0, 0, 0),
             };
             if (pair) { b.MinWidth = 110; b.HorizontalContentAlignment = HorizontalAlignment.Center; }
+            // в режиме просмотра отметка видна, но не нажимается
+            if (ViewOnly) { b.IsHitTestVisible = false; b.Focusable = false; }
             Ui.SetIsActive(b, v == o.Value);
             if (section.Kind == Kinds.Scale || section.Kind == Kinds.Sound) Ui.SetLevel(b, o.Score);
             var value = o.Value;
@@ -230,6 +235,10 @@ public sealed class ExamPage : PageBase
         {
             case Key.Down: e.Handled = true; _cursor = Math.Min(items.Count - 1, _cursor + 1); Rerender(); return;
             case Key.Up: e.Handled = true; _cursor = Math.Max(0, _cursor - 1); Rerender(); return;
+        }
+        if (ViewOnly) return;
+        switch (e.Key)
+        {
             case Key.Back or Key.Delete: e.Handled = true; S.SetScore(child.Id, period.Id, items[_cursor].Id, null); Rerender(); return;
         }
         var digit = e.Key switch

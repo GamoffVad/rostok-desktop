@@ -29,8 +29,9 @@ public sealed class ChildrenPage(Route route) : PageBase(route)
         var kids = D.ChildrenOf(group?.Id);
 
         var page = Page(PageHeader("Дети", "Список группы и состояние обследования на выбранном срезе. Нажмите на фамилию, чтобы открыть карту ребёнка.",
-            Ui.Primary("Добавить детей", () => { _mode = _mode == "child" ? null : "child"; Refresh(); }, IconKind.Plus),
-            Ui.Ghost("Новая группа", () => { _mode = _mode == "group" ? null : "group"; Refresh(); })));
+            ViewOnly ? null : Ui.Primary("Добавить детей", () => { _mode = _mode == "child" ? null : "child"; Refresh(); }, IconKind.Plus),
+            ViewOnly ? null : Ui.Ghost("Новая группа", () => { _mode = _mode == "group" ? null : "group"; Refresh(); })));
+        if (ViewOnly) _mode = null;
 
         if (_mode == "child" && group is not null) page.Children.Add(AddChildForm(group));
         if (_mode == "group") page.Children.Add(AddGroupForm());
@@ -42,7 +43,7 @@ public sealed class ChildrenPage(Route route) : PageBase(route)
         else
             page.Children.Add(Tbl.Scroll(ChildrenTable(kids, period)));
 
-        if (group is not null) page.Children.Add(GroupSettings(group, kids.Count));
+        if (group is not null && !ViewOnly) page.Children.Add(GroupSettings(group, kids.Count));
         return page;
     }
 
@@ -60,13 +61,15 @@ public sealed class ChildrenPage(Route route) : PageBase(route)
             object parents = c.Relatives.Count > 0
                 ? Ui.Text(string.Join(", ", c.Relatives.Select(r => r.Role.Length > 0 ? r.Role : "контакт")), null, Theme.Ink2, 13, wrap: true)
                     .Tip(string.Join("\n", c.Relatives.Select(r => $"{r.Role}: {r.Name} {Relatives.PhonesText(r)}")))
-                : Ui.TextAction("добавить", () => Go($"/child/{id}"));
+                : ViewOnly ? Ui.Faint("нет") : Ui.TextAction("добавить", () => Go($"/child/{id}"));
             var blockCells = M.Blocks.Select(b =>
             {
                 var m = Calc.BlockMean(b.Sections, s);
                 return (object?)Ui.HStack(6, new Level(Calc.LevelOf(m)), Ui.Num(Calc.Fmt(m), Theme.Ink3).With(x => x.VerticalAlignment = VerticalAlignment.Center));
             });
-            UIElement actions = _confirmId == c.Id
+            UIElement actions = ViewOnly
+                ? Ui.TextAction("карта ребёнка", () => Go($"/child/{id}"))
+                : _confirmId == c.Id
                 ? Ui.HStack(4, Ui.TextAction("удалить с баллами", () => { S.RemoveChild(id); _confirmId = null; Refresh(); }, danger: true), Ui.Muted(" · ", 12).With(x => x.VerticalAlignment = VerticalAlignment.Center), Ui.TextAction("отмена", () => { _confirmId = null; Refresh(); }))
                 : Ui.HStack(4, Ui.TextAction("обследовать", () => Go("/exam", ("child", id))), Ui.Muted(" · ", 12).With(x => x.VerticalAlignment = VerticalAlignment.Center), Ui.TextAction("удалить", () => { _confirmId = id; Refresh(); }));
             t.Row([

@@ -26,11 +26,13 @@ public sealed class LibraryPage(Route route) : PageBase(route)
         var totalItems = sections.Sum(s => s.Items.Count());
 
         var page = Page(PageHeader("Упражнения",
-            "Библиотека: к каждой диагностической пробе — свой блок упражнений. Из неё собирается программа коррекции ребёнка по выявленным дефицитам. Одна строка — одно упражнение; изменения сохраняются сразу.",
+            ViewOnly
+                ? "Библиотека сотрудника: к каждой диагностической пробе — свой блок упражнений. Только просмотр; шаблон Excel можно выгрузить."
+                : "Библиотека: к каждой диагностической пробе — свой блок упражнений. Из неё собирается программа коррекции ребёнка по выявленным дефицитам. Одна строка — одно упражнение; изменения сохраняются сразу.",
             Ui.Ghost("Шаблон Excel", ExportTemplate, IconKind.Download),
-            new FilePick(Ui.Content(IconKind.Upload, "Загрузить из Excel"), "Книга Excel (*.xls;*.xlsx)|*.xls;*.xlsx", OnFile)));
+            ViewOnly ? null : new FilePick(Ui.Content(IconKind.Upload, "Загрузить из Excel"), "Книга Excel (*.xls;*.xlsx)|*.xls;*.xlsx", OnFile)));
         if (_status is { } st) page.Children.Add(Ui.Status(st.Text, st.Ok).Margin(0, 0, 0, 10));
-        page.Children.Add(Ui.HelpNote(Ui.Rich(
+        if (!ViewOnly) page.Children.Add(Ui.HelpNote(Ui.Rich(
             Ui.Run("Сейчас заполнено "), Ui.Run(totalFilled.ToString(), Theme.Ink, FontWeights.Bold, mono: true), Ui.Run(" из "), Ui.Run(totalItems.ToString(), mono: true), Ui.Run(" проб. "),
             Ui.Run(D.Library is null ? "Это образцы: замените их своими или очистите библиотеку. " : ""),
             Ui.Run("Удобно заполнять в Excel: выгрузите шаблон, впишите упражнения в последнюю колонку (новая строка в ячейке — Alt+Enter) и загрузите файл обратно.")).With(t => t.FontSize = 13)).Margin(0, 0, 0, 14));
@@ -62,7 +64,7 @@ public sealed class LibraryPage(Route route) : PageBase(route)
             "reset" => Ui.Row(12, Ui.TextAction("да, заменить образцами", () => { S.SetLibrary(new Dictionary<string, string>(M.ExampleLibrary)); _ask = null; Refresh(); }, danger: true), Ui.TextAction("отмена", () => { _ask = null; Refresh(); })),
             _ => Ui.Row(12, Ui.TextAction("вернуть образцы", () => { _ask = "reset"; Refresh(); }), Ui.TextAction("очистить всё", () => { _ask = "clear"; Refresh(); }, danger: true)),
         };
-        nav.Children.Add(new Border { Margin = new Thickness(0, 16, 0, 0), Child = confirm });
+        if (!ViewOnly) nav.Children.Add(new Border { Margin = new Thickness(0, 16, 0, 0), Child = confirm });
 
         // ── пробы раздела ──
         var main = new StackPanel();
@@ -85,7 +87,8 @@ public sealed class LibraryPage(Route route) : PageBase(route)
                 var box = Ui.Input(library.GetValueOrDefault(item.Id) ?? "", "Упражнения для этой пробы — каждое с новой строки", null, multiline: true, rows: 2);
                 box.MinHeight = 56;
                 var id = item.Id;
-                box.TextChanged += (_, _) => _save((id, box.Text));
+                if (ViewOnly) box.IsReadOnly = true;
+                else box.TextChanged += (_, _) => _save((id, box.Text));
                 Grid.SetColumn(box, 2);
                 row.Children.Add(box);
                 g.Children.Add(new Border { BorderBrush = Theme.Line, BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(0, 10, 0, 10), Child = row });

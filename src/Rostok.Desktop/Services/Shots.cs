@@ -10,12 +10,14 @@ namespace Rostok.Desktop.Services;
 // Режим снимков экрана для проверки дизайна и документации:
 //   Rostok.exe --shots <папка> [маршрут …]
 // Создаётся временная база с рабочим пространством-примером, каждый экран сохраняется в PNG целиком.
+// Первое пространство — руководитель; маршрут с приставкой «view:» снимается в пространстве второго сотрудника в режиме просмотра.
 public static class Shots
 {
     public static readonly string[] DefaultRoutes =
     [
         "login", "/", "/child/{child}", "/child/{child}?tab=program", "/child/{child}?tab=report", "/exam?child={child}",
-        "/protocol", "/dynamics", "/library", "/parent/{child}", "/admin/data", "/admin/dicts", "/admin/ui", "/admin/workspace", "/admin/connection", "/help",
+        "/protocol", "/dynamics", "/library", "/parent/{child}", "/admin/data", "/admin/dicts", "/admin/ui", "/admin/workspace", "/admin/org", "/admin/connection", "/help",
+        "/org", "view:/", "view:/exam?child={child}",
     ];
 
     public static bool TryRun(string[] args)
@@ -34,13 +36,32 @@ public static class Shots
     {
         try
         {
+            // окно входа в новой, пустой базе: создание первого пространства и пароль администратора базы
+            if (routes.Contains("login-new"))
+            {
+                var emptyPath = Path.Combine(Path.GetTempPath(), $"rostok-shots-{Guid.NewGuid():N}.db");
+                var empty = new Database(emptyPath);
+                empty.EnsureCreated();
+                AppHost.UseDatabase(empty);
+                var login = new LoginWindow { Left = -20000, Top = 0, ShowActivated = false };
+                login.Show();
+                await Settle();
+                var lc = (FrameworkElement)login.Content;
+                Save(lc, Path.Combine(dir, "login-new.png"), lc.ActualWidth, lc.ActualHeight);
+                login.Close();
+                try { File.Delete(emptyPath); } catch (IOException) { }
+            }
+
             var dbPath = Path.Combine(Path.GetTempPath(), $"rostok-shots-{Guid.NewGuid():N}.db");
             var db = new Database(dbPath);
             db.EnsureCreated();
             var ws = new Workspaces(db);
             var id = ws.Create("Иванова Мария, логопед", "1234");
             Store.Open(db, id, "Иванова Мария, логопед").Merge(Demo.Build());
-            ws.Create("Петрова Анна, психолог", "1234");
+            var other = ws.Create("Петрова Анна, психолог", "1234");
+            Store.Open(db, other, "Петрова Анна, психолог").Merge(Demo.Build());
+            ws.SetAdminPassword(null, "admin-1");
+            ws.SetRole(id, Roles.Supervisor, "admin-1");
             AppHost.UseDatabase(db);
 
             foreach (var r in routes.Where(r => r == "login"))
@@ -56,18 +77,22 @@ public static class Shots
             AppHost.SignInForShots(id, "Иванова Мария, логопед");
             var main = AppHost.Main!;
             main.Left = -20000;
-            var child = AppHost.Store!.Data.ChildrenOf(AppHost.Store.Data.Groups[0].Id)[1].Id;
-            foreach (var route in routes.Where(r => r != "login"))
+            foreach (var route in routes.Where(r => r is not ("login" or "login-new")))
             {
-                var path = route.Replace("{child}", child);
+                var view = route.StartsWith("view:");
+                if (view && !AppHost.IsViewing) AppHost.ViewAs(ws.Get(other)!);
+                if (!view && AppHost.IsViewing) AppHost.ReturnToOwn();
+                var data = AppHost.Store!.Data;
+                var child = data.ChildrenOf(data.Groups[0].Id)[1].Id;
+                var path = (view ? route[5..] : route).Replace("{child}", child);
                 var parts = path.Split('?');
                 var query = parts.Length > 1
                     ? parts[1].Split('&').Select(kv => kv.Split('=')).Select(kv => (kv[0], (string?)kv[1])).ToArray()
                     : [];
                 main.Navigate(Route.Of(parts[0], query));
                 await Settle();
-                var name = route.Trim('/').Replace("{child}", "child").Replace('/', '-').Replace('?', '-').Replace('=', '-').Replace('&', '-');
-                main.SaveFullPage(Path.Combine(dir, $"{(name.Length == 0 ? "children" : name)}.png"));
+                var name = route.Replace("view:/", "view-").Trim('/').Replace("{child}", "child").Replace('/', '-').Replace('?', '-').Replace('=', '-').Replace('&', '-');
+                main.SaveFullPage(Path.Combine(dir, $"{(name.Length == 0 ? "children" : name.EndsWith('-') ? name + "children" : name)}.png"));
             }
             main.Close();
             File.Delete(dbPath);

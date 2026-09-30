@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS workspaces (
   password_salt  TEXT NOT NULL,
   iterations     INTEGER NOT NULL,
   created_at     TEXT NOT NULL,
-  last_opened_at TEXT
+  last_opened_at TEXT,
+  role           TEXT NOT NULL DEFAULT 'employee' -- employee | supervisor (руководитель видит все пространства)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_workspaces_name ON workspaces (name COLLATE NOCASE);
 
@@ -87,3 +88,14 @@ CREATE TABLE IF NOT EXISTS settings (
   value        TEXT NOT NULL,
   PRIMARY KEY (workspace_id, key)
 );
+
+-- журнал: когда руководитель открывал пространство сотрудника или сбрасывал его пароль
+CREATE TABLE IF NOT EXISTS access_log (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id TEXT NOT NULL,
+  viewer_id    TEXT NOT NULL,
+  viewer_name  TEXT NOT NULL,
+  action       TEXT NOT NULL, -- view | password_reset
+  at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_access_log_workspace ON access_log (workspace_id, at);

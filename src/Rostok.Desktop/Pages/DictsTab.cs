@@ -15,6 +15,7 @@ public sealed class DictsTab(Action refresh)
 {
     private bool _ask;
     private static Store S => AppHost.Store!;
+    private static bool ViewOnly => S.ReadOnly;
 
     public UIElement Build()
     {
@@ -46,7 +47,7 @@ public sealed class DictsTab(Action refresh)
         }
 
         var main = new StackPanel();
-        UIElement? reset = changed > 0
+        UIElement? reset = changed > 0 && !ViewOnly
             ? _ask
                 ? Ui.HStack(12, Ui.TextAction("да, вернуть все значения по умолчанию", () => { S.ResetDict(dict.Id); _ask = false; refresh(); }, danger: true), Ui.TextAction("отмена", () => { _ask = false; refresh(); }))
                 : Ui.TextAction("вернуть значения по умолчанию", () => { _ask = true; refresh(); })
@@ -54,7 +55,9 @@ public sealed class DictsTab(Action refresh)
         main.Children.Add(Ui.BlockHead(Ui.H2(dict.Title), reset));
         if (dict.Hint is not null) main.Children.Add(Ui.Faint(dict.Hint).With(t => { t.MaxWidth = 720; t.HorizontalAlignment = HorizontalAlignment.Left; t.Margin = new Thickness(0, 0, 0, 12); }));
         main.Children.Add(dict.IsList ? ListEditor(dict, overrides[dict.Id] as JsonArray) : TableEditor(dict, overrides[dict.Id] as JsonObject ?? []));
-        main.Children.Add(Ui.HelpNote(Ui.Faint("Правки сохраняются сразу и видны на всех экранах, в отчётах и выгрузках. Очистите поле — вернётся значение по умолчанию (оно показано серым). Словари входят в резервную копию на вкладке «Данные».")).Margin(0, 20, 0, 0));
+        main.Children.Add(Ui.HelpNote(Ui.Faint(ViewOnly
+            ? "Словари сотрудника — только просмотр. Изменённые значения отмечены слева, под ними показано значение по умолчанию."
+            : "Правки сохраняются сразу и видны на всех экранах, в отчётах и выгрузках. Очистите поле — вернётся значение по умолчанию (оно показано серым). Словари входят в резервную копию на вкладке «Данные».")).Margin(0, 20, 0, 0));
 
         var g2 = new Grid();
         g2.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(288) });
@@ -106,7 +109,8 @@ public sealed class DictsTab(Action refresh)
                 if (!f.Multiline) input.PreviewKeyDown += (_, e) => { if (e.Key == Key.Enter) e.Handled = true; };
                 var key = row.Key;
                 var save = Ui.Debounce<string>(v => S.SetDictValue(dict.Id, key, f.Key, f.Multiline ? v : v.Replace("\r", "").Replace("\n", " "), def));
-                input.TextChanged += (_, _) => save(input.Text);
+                if (ViewOnly) input.IsReadOnly = true;
+                else input.TextChanged += (_, _) => save(input.Text);
                 var cell = new StackPanel();
                 cell.Children.Add(input);
                 if (ov is not null && ov != def) cell.Children.Add(Ui.Text($"по умолчанию: {(def.Length > 0 ? def : "—")}", null, Theme.Faint, 11.5, wrap: true).Margin(0, 3, 0, 0));
@@ -139,9 +143,15 @@ public sealed class DictsTab(Action refresh)
             foreach (var _ in Enumerable.Range(0, 3)) { g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) }); g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) }); }
             g.Children.Add(Ui.Num((i + 1).ToString(), Theme.Ink3, 12).With(t => { t.HorizontalAlignment = HorizontalAlignment.Right; t.VerticalAlignment = VerticalAlignment.Center; }));
             var input = Ui.Input(list[i]);
-            input.TextChanged += (_, _) => { list[idx] = input.Text; saveText([.. list]); };
             Grid.SetColumn(input, 2);
             g.Children.Add(input);
+            if (ViewOnly)
+            {
+                input.IsReadOnly = true;
+                box.Children.Add(g);
+                continue;
+            }
+            input.TextChanged += (_, _) => { list[idx] = input.Text; saveText([.. list]); };
             Button Small(string content, string tip, Action a, bool enabled = true, bool danger = false)
             {
                 var b = Ui.Button("IconButton", content, a, tip);
@@ -158,7 +168,7 @@ public sealed class DictsTab(Action refresh)
             g.Children.Add(up); g.Children.Add(down); g.Children.Add(del);
             box.Children.Add(g);
         }
-        box.Children.Add(Ui.Ghost("Добавить значение", () => { list.Add(""); Save(list, true); }, IconKind.Plus).With(b => b.HorizontalAlignment = HorizontalAlignment.Left));
+        if (!ViewOnly) box.Children.Add(Ui.Ghost("Добавить значение", () => { list.Add(""); Save(list, true); }, IconKind.Plus).With(b => b.HorizontalAlignment = HorizontalAlignment.Left));
         return box;
     }
 }

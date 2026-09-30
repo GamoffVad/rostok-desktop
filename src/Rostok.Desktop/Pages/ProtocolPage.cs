@@ -39,7 +39,9 @@ public sealed class ProtocolPage : PageBase
         export.IsEnabled = kids.Count > 0 && period is not null;
 
         var page = Page(
-            PageHeader("Протокол группы", "Таблица как в Excel: дети по строкам, пробы по столбцам. Нажатие по ячейке перебирает отметки; с клавиатуры — цифры, стрелки, Backspace. Сумма, среднее и уровень считаются сами.", export),
+            PageHeader("Протокол группы", ViewOnly
+                ? "Таблица как в Excel: дети по строкам, пробы по столбцам — только просмотр. Нажатие по ячейке и стрелки выбирают пробу."
+                : "Таблица как в Excel: дети по строкам, пробы по столбцам. Нажатие по ячейке перебирает отметки; с клавиатуры — цифры, стрелки, Backspace. Сумма, среднее и уровень считаются сами.", export),
             Filters(false, GroupFilter(group), PeriodFilter(period),
                 new FilterCard("Раздел", new Dropdown(M.AllSections.Select(s => new DropdownOption(s.Id, $"{(s.BlockId == "neuro" ? "Нейро · " : "")}{s.Title}")), section.Id,
                     v => { S.SetUi(u => u.SectionId = (string?)v); _r = _c = 0; Rerender(); }, label: "Раздел"), wide: true)));
@@ -170,12 +172,18 @@ public sealed class ProtocolPage : PageBase
                 var box = new Border
                 {
                     Width = 34, Height = 34, CornerRadius = new CornerRadius(2), Background = s is { } l2 ? Theme.LevelBg[l2] : Brushes.Transparent,
-                    BorderBrush = active ? Theme.Accent : Brushes.Transparent, BorderThickness = new Thickness(active ? 2 : 0), Child = text, Cursor = Cursors.Hand,
+                    BorderBrush = active ? Theme.Accent : Brushes.Transparent, BorderThickness = new Thickness(active ? 2 : 0), Child = text, Cursor = ViewOnly ? Cursors.Arrow : Cursors.Hand,
                     ToolTip = $"{k.Name}, {it.Label}: {(v is null ? "пусто" : options.FirstOrDefault(o => o.Value == v)?.Label)}",
                 };
                 var rr = r;
                 var cc = c;
-                box.MouseLeftButtonDown += (_, e) => { e.Handled = true; _r = rr; _c = cc; Cycle(kids[rr], it, period, options); };
+                box.MouseLeftButtonDown += (_, e) =>
+                {
+                    e.Handled = true;
+                    _r = rr;
+                    _c = cc;
+                    if (ViewOnly) Rerender(); else Cycle(kids[rr], it, period, options);
+                };
                 Cell(box, row, 1 + c, bg: rowBg, dashLeft: firstInGroup.Contains(1 + c));
             }
             if (scored)
@@ -242,6 +250,10 @@ public sealed class ProtocolPage : PageBase
             case Key.Left: Move(0, -1); return;
             case Key.Down: Move(1, 0); return;
             case Key.Up: Move(-1, 0); return;
+        }
+        if (ViewOnly) return;
+        switch (e.Key)
+        {
             case Key.Enter or Key.Space: e.Handled = true; Cycle(kids[_r], items[_c], period, options); return;
             case Key.Back or Key.Delete: e.Handled = true; S.SetScore(kids[_r].Id, period.Id, items[_c].Id, null); Rerender(); return;
         }

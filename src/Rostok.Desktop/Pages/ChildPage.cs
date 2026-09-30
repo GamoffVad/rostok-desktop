@@ -33,7 +33,7 @@ public sealed class ChildPage(Route route) : PageBase(route)
 
         var page = Page(
             PageHeader(child.Name, subtitle.Length > 0 ? subtitle : "Карта ребёнка",
-                Ui.Primary("Обследовать", () => Go("/exam", ("child", child.Id))),
+                Ui.Primary(ViewOnly ? "Обследование" : "Обследовать", () => Go("/exam", ("child", child.Id))),
                 Ui.Ghost("Отчёт для родителей", () => Go($"/parent/{child.Id}"), IconKind.Print)),
             new TabBar([new TabSpec("profile", "Профиль и динамика"), new TabSpec("program", "Программа коррекции"), new TabSpec("report", "Заключение")],
                 Tab is "program" or "report" ? Tab : "profile",
@@ -54,10 +54,10 @@ public sealed class ChildPage(Route route) : PageBase(route)
     // ── Профиль ─────────────────────────────────────────
     private void Profile(StackPanel page, Child child, List<Period> filled)
     {
-        page.Children.Add(Ui.Card(ChildForm(child), top: false, padTop: 22));
+        page.Children.Add(Ui.Card(ViewOnly ? ChildInfo(child) : ChildForm(child), top: false, padTop: 22));
         if (filled.Count == 0)
         {
-            page.Children.Add(Ui.Empty("Обследований пока нет. Нажмите «Обследовать», чтобы заполнить первый срез."));
+            page.Children.Add(Ui.Empty(ViewOnly ? "Обследований пока нет." : "Обследований пока нет. Нажмите «Обследовать», чтобы заполнить первый срез."));
             return;
         }
         var first = filled[0];
@@ -146,6 +146,33 @@ public sealed class ChildPage(Route route) : PageBase(route)
         actions.Margin = new Thickness(0, 12, 0, 0);
         Update();
         return Ui.VStack(0, fields, Ui.H3("Родители и родственники").Margin(0, 20, 0, 8), new RelativesEditor(form.Relatives, Update), actions);
+    }
+
+    // Сведения о ребёнке без полей ввода — для режима просмотра руководителем.
+    private static FrameworkElement ChildInfo(Child child)
+    {
+        static UIElement Value(string text) => text.Trim().Length > 0
+            ? Ui.Text(text, null, Theme.Ink, 14, wrap: true)
+            : Ui.Faint("не указано");
+        var fields = ChildrenPage.ChildFields(
+            Ui.Field("Фамилия и имя", Value(child.Name)),
+            Ui.Field("Дата рождения", Value(DateTime.TryParse(child.BirthDate, out var born) ? born.ToString("dd.MM.yyyy") : child.BirthDate ?? "")),
+            Ui.Field("Заключение ТПМПК", Value(child.Tpmpk)),
+            Ui.Field("Заметки", Value(child.Note)));
+        var people = new StackPanel();
+        if (child.Relatives.Count == 0) people.Children.Add(Ui.Faint("не указаны"));
+        foreach (var r in child.Relatives)
+        {
+            var lines = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+            lines.Children.Add(Ui.Rich(
+                Ui.Run(r.Role.Length > 0 ? r.Role : "контакт", Theme.Ink3),
+                Ui.Run(r.Name.Length > 0 ? "  " + r.Name : "", Theme.Ink, FontWeights.SemiBold),
+                Ui.Run(r.Legal ? "  · законный представитель" : "", Theme.Ink3)));
+            foreach (var extra in new[] { Relatives.PhonesText(r), Relatives.EmailsText(r), Relatives.AddressesText(r), r.Note })
+                if (extra.Length > 0) lines.Children.Add(Ui.Muted(extra, 13).With(t => t.TextWrapping = TextWrapping.Wrap));
+            people.Children.Add(lines);
+        }
+        return Ui.VStack(0, fields, Ui.H3("Родители и родственники").Margin(0, 20, 0, 8), people);
     }
 
     // ── Заключение ──────────────────────────────────────

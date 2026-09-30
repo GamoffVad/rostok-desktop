@@ -10,7 +10,13 @@ public static class AppHost
     public static AppSettings Settings { get; private set; } = new();
     public static Database? Db { get; private set; }
     public static string? DbError { get; private set; }
+    // Активное пространство: своё или — у руководителя — открытое для просмотра пространство сотрудника.
     public static Store? Store { get; private set; }
+    // Своё пространство вошедшего сотрудника.
+    public static Store? OwnStore { get; private set; }
+    // Вошедший — руководитель (старший специалист): видит пространства всех сотрудников.
+    public static bool IsSupervisor { get; private set; }
+    public static bool IsViewing => Store is not null && OwnStore is not null && !ReferenceEquals(Store, OwnStore);
     public static MainWindow? Main { get; private set; }
     private static LoginWindow? _login;
 
@@ -57,7 +63,8 @@ public static class AppHost
     // Вход без записи настроек компьютера — для режима снимков экрана.
     internal static void SignInForShots(string workspaceId, string name)
     {
-        Store = Store.Open(Db!, workspaceId, name);
+        Store = OwnStore = Store.Open(Db!, workspaceId, name);
+        IsSupervisor = new Workspaces(Db!).Get(workspaceId)?.IsSupervisor ?? false;
         Main = new MainWindow { ShowActivated = false };
         Main.Show();
     }
@@ -71,8 +78,10 @@ public static class AppHost
 
     public static void SignIn(string workspaceId, string name)
     {
-        new Workspaces(Db!).MarkOpened(workspaceId);
-        Store = Store.Open(Db!, workspaceId, name);
+        var ws = new Workspaces(Db!);
+        ws.MarkOpened(workspaceId);
+        Store = OwnStore = Store.Open(Db!, workspaceId, name);
+        IsSupervisor = ws.Get(workspaceId)?.IsSupervisor ?? false;
         Settings.LastWorkspaceId = workspaceId;
         try { Settings.Save(); } catch (Exception) { /* настройки компьютера не записались — не критично */ }
         Main = new MainWindow();
@@ -87,9 +96,30 @@ public static class AppHost
     {
         var main = Main;
         Main = null;
-        Store = null;
+        Store = OwnStore = null;
+        IsSupervisor = false;
         ShowLogin();
         main?.Close();
+    }
+
+    // Руководитель открывает пространство сотрудника только для просмотра; открытие записывается в журнал сотрудника.
+    public static void ViewAs(WorkspaceInfo target)
+    {
+        if (!IsSupervisor || OwnStore is null || Db is null) return;
+        if (target.Id == OwnStore.WorkspaceId) { ReturnToOwn(); return; }
+        var view = Store.Open(Db, target.Id, target.Name, readOnly: true);
+        view.Blocked += () => Main?.ShowBlocked();
+        new Workspaces(Db).LogAccess(target.Id, OwnStore.WorkspaceId, OwnStore.WorkspaceName, "view");
+        Store = view;
+        Main?.Navigate(Services.Route.Of("/"));
+    }
+
+    public static void ReturnToOwn()
+    {
+        if (OwnStore is null) return;
+        Store = OwnStore;
+        OwnStore.Activate();
+        Main?.Navigate(Services.Route.Of("/org"));
     }
 
     // Новое подключение к базе: сохраняем путь этого компьютера (null — путь по умолчанию) и открываем базу заново.

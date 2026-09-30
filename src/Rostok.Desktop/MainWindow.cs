@@ -27,6 +27,10 @@ public sealed class MainWindow : Window
     private readonly ScrollViewer _scroll;
     private readonly Border _page = new() { MaxWidth = 1320, Padding = new Thickness(0, 0, 0, 40) };
     private readonly TextBlock _status;
+    // Плашка режима просмотра: руководитель смотрит пространство сотрудника
+    private readonly Border _viewBar = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
+    private readonly TextBlock _viewText = new() { FontSize = 13, Foreground = Theme.Ink, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _viewHint = new() { FontSize = 12, Foreground = Theme.Ink3, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
     private readonly TextBlock _footerText = new() { FontSize = 12, Foreground = Theme.Ink3, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
     private readonly Stack<Route> _history = new();
     private Route _route = Route.Of("/");
@@ -95,7 +99,27 @@ public sealed class MainWindow : Window
             Content = new Border { Padding = new Thickness(40, 0, 40, 0), Child = _page },
         };
 
-        var head = _head = new Border { Padding = new Thickness(40, 0, 40, 0), Background = Theme.Paper, Child = new StackPanel { MaxWidth = 1320, Children = { topbar, _status } } };
+        var back = Ui.Ghost("Вернуться в своё пространство", AppHost.ReturnToOwn, IconKind.ArrowBack);
+        back.MinHeight = 34;
+        var viewRow = new DockPanel();
+        DockPanel.SetDock(back, Dock.Right);
+        viewRow.Children.Add(back);
+        viewRow.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children =
+            {
+                new RIcon(IconKind.Eye, 18) { Foreground = Theme.Accent, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) },
+                new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { _viewText, _viewHint } },
+            },
+        });
+        _viewBar.Background = Theme.Soft;
+        _viewBar.BorderBrush = Theme.Accent;
+        _viewBar.BorderThickness = new Thickness(2, 0, 0, 0);
+        _viewBar.Padding = new Thickness(14, 8, 8, 8);
+        _viewBar.Child = viewRow;
+
+        var head = _head = new Border { Padding = new Thickness(40, 0, 40, 0), Background = Theme.Paper, Child = new StackPanel { MaxWidth = 1320, Children = { topbar, _viewBar, _status } } };
         _footer = footer;
         var root = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(head, Dock.Top);
@@ -128,6 +152,7 @@ public sealed class MainWindow : Window
             "help" => new HelpPage(route),
             "admin" => new AdminPage(route),
             "library" => new LibraryPage(route),
+            "org" when AppHost.IsSupervisor && !AppHost.IsViewing => new OrganizationPage(route),
             _ when empty => new WelcomePage(route),
             "child" => new ChildPage(route),
             "exam" => new ExamPage(route),
@@ -170,10 +195,27 @@ public sealed class MainWindow : Window
         }
 
         var ws = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
-        ws.Children.Add(new RIcon(IconKind.User, 14) { Foreground = Theme.Ink3, VerticalAlignment = VerticalAlignment.Center });
-        ws.Children.Add(new TextBlock { Text = AppHost.Store!.WorkspaceName, FontSize = 12.5, Foreground = Theme.Ink2, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, MaxWidth = 220, TextTrimming = TextTrimming.CharacterEllipsis });
-        ws.ToolTip = "Рабочее пространство: все данные и настройки сохраняются только в нём";
+        var viewing = AppHost.IsViewing;
+        ws.Children.Add(new RIcon(viewing ? IconKind.Eye : IconKind.User, 14) { Foreground = viewing ? Theme.Accent : Theme.Ink3, VerticalAlignment = VerticalAlignment.Center });
+        ws.Children.Add(new TextBlock
+        {
+            Text = viewing ? $"просмотр: {AppHost.Store!.WorkspaceName}" : AppHost.Store!.WorkspaceName,
+            FontSize = 12.5, Foreground = viewing ? Theme.Accent : Theme.Ink2, Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center, MaxWidth = 240, TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        ws.ToolTip = viewing
+            ? "Вы смотрите пространство сотрудника: изменить ничего нельзя"
+            : AppHost.IsSupervisor ? "Ваше рабочее пространство · вы руководитель и видите пространства всех сотрудников" : "Рабочее пространство: все данные и настройки сохраняются только в нём";
         _tools.Children.Add(ws);
+
+        // руководитель: экран «Организация» — пространства всех сотрудников
+        if (AppHost.IsSupervisor)
+        {
+            var org = Ui.IconButton(IconKind.Building, "Организация: пространства всех сотрудников", () => { if (AppHost.IsViewing) AppHost.ReturnToOwn(); else Navigate(Route.Of("/org")); });
+            Ui.SetIsActive(org, section == "org" && !viewing);
+            org.Margin = new Thickness(0, 0, 6, 0);
+            _tools.Children.Add(org);
+        }
 
         var admin = Ui.IconButton(IconKind.Gear, "Администрирование: данные, словари, подключение к базе", () => Navigate(Route.Of("/admin/data")));
         Ui.SetIsActive(admin, section == "admin");
@@ -222,11 +264,27 @@ public sealed class MainWindow : Window
         enc.Save(fs);
     }
 
+    // Попытка изменить данные в режиме просмотра — напоминаем на плашке.
+    public void ShowBlocked()
+    {
+        _viewHint.Text = "Изменения в режиме просмотра не сохраняются — это пространство сотрудника.";
+        _viewHint.Foreground = Theme.Danger;
+    }
+
     public void UpdateStatus()
     {
         var store = AppHost.Store;
         if (store is null) return;
-        _footerText.Text = $"Росток — динамика развития ребёнка · рабочее пространство «{store.WorkspaceName}» · база: {store.Db.Path}";
+        var viewing = AppHost.IsViewing;
+        _viewBar.Visibility = viewing ? Visibility.Visible : Visibility.Collapsed;
+        if (viewing)
+        {
+            _viewText.Text = $"Просмотр пространства «{store.WorkspaceName}» · только чтение";
+            _viewHint.Text = "Видны все экраны, отчёты и выгрузки; изменить ничего нельзя. Открытие записано в журнал сотрудника.";
+            _viewHint.Foreground = Theme.Ink3;
+        }
+        Title = viewing ? $"Росток — просмотр «{store.WorkspaceName}»" : $"Росток — {store.WorkspaceName}";
+        _footerText.Text = $"Росток — динамика развития ребёнка · {(viewing ? "просмотр пространства" : "рабочее пространство")} «{store.WorkspaceName}» · база: {store.Db.Path}";
         _footerText.ToolTip = store.Db.Path;
         if (store.SaveError is not null)
         {

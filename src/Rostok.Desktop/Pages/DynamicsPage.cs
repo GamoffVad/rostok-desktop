@@ -11,27 +11,13 @@ public sealed class DynamicsPage(Route route) : PageBase(route)
 {
     private string _blockId = "speech";
 
-    // Срезы по умолчанию: последний учебный год, где заполнены и начало, и конец; иначе первый и последний срез с данными.
-    private static (Period? Start, Period? End) DefaultRange(List<Child> kids)
-    {
-        var withData = D.Periods.Where(p => kids.Any(k => D.HasScores(k.Id, p.Id))).ToList();
-        foreach (var year in withData.Select(p => p.Year).Distinct().Reverse())
-        {
-            var pair = withData.Where(p => p.Year == year).ToList();
-            if (pair.Count == 2) return (pair[0], pair[1]);
-        }
-        var start = withData.FirstOrDefault() ?? D.Periods.FirstOrDefault();
-        var end = withData.Count > 1 ? withData[^1] : D.Periods.ElementAtOrDefault(Math.Min(1, D.Periods.Count - 1));
-        return (start, end);
-    }
-
     private sealed record RowData(Child Child, IReadOnlyDictionary<string, string> A, IReadOnlyDictionary<string, string> B, double? MA, double? MB, OutcomeResult? Res);
 
     protected override UIElement Build()
     {
         var group = S.SelectedGroup;
         var kids = D.ChildrenOf(group?.Id);
-        var def = DefaultRange(kids);
+        var def = Dynamics.DefaultRange(D, kids);
         var start = D.Period(S.Ui.StartId) ?? def.Start;
         var end = D.Period(S.Ui.EndId) ?? def.End;
         var block = M.Blocks.First(b => b.Id == _blockId);
