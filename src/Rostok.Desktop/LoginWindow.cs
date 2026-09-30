@@ -11,15 +11,14 @@ using Rostok.Desktop.Services;
 
 namespace Rostok.Desktop;
 
-// Вход: выбрать рабочее пространство и ввести его пароль — или создать новое.
-// Каждый сотрудник работает в своём пространстве: группы, дети, баллы, библиотека, словари и настройки хранятся только в нём.
+// Вход: логин и пароль пользователя, затем выбор рабочего пространства (хранилища) или создание нового.
+// Пользователь видит только свои пространства; администраторы — все, чужие открываются только для просмотра.
 public sealed class LoginWindow : Window
 {
-    private enum Mode { Enter, Create, Connection }
+    private enum Mode { Login, Choose, Create, Connection }
 
     private readonly Border _body = new();
     private Mode _mode;
-    private string? _selected;
     private string? _error;
 
     public LoginWindow()
@@ -44,9 +43,7 @@ public sealed class LoginWindow : Window
         grid.Children.Add(scroll);
         Content = grid;
 
-        _selected = AppHost.Settings.LastWorkspaceId;
-        _mode = AppHost.Db is null ? Mode.Connection : Mode.Enter;
-        if (_mode == Mode.Enter && List().Count == 0) _mode = Mode.Create;
+        _mode = AppHost.Db is null ? Mode.Connection : AppHost.User is null ? Mode.Login : Mode.Choose;
         Closed += (_, _) => { if (AppHost.Main is null && Application.Current.MainWindow == this) AppHost.Quit(); };
         Render();
     }
@@ -76,19 +73,21 @@ public sealed class LoginWindow : Window
         return panel;
     }
 
-    private static List<WorkspaceInfo> List()
+    private void Go(Mode mode)
     {
-        try { return AppHost.Db is null ? [] : new Workspaces(AppHost.Db).List(); }
-        catch (Exception) { return []; }
+        _mode = mode;
+        _error = null;
+        Render();
     }
 
     private void Render()
     {
         _body.Child = _mode switch
         {
-            Mode.Create => CreateView(),
+            Mode.Choose when AppHost.User is not null => ChooseView(),
+            Mode.Create when AppHost.User is not null => CreateView(),
             Mode.Connection => ConnectionView(),
-            _ => EnterView(),
+            _ => LoginView(),
         };
     }
 
@@ -96,7 +95,7 @@ public sealed class LoginWindow : Window
     {
         var s = new DashBorder { Sides = Sides.Top, Margin = new Thickness(0, 28, 0, 0), Padding = new Thickness(0, 12, 0, 0) };
         var row = new DockPanel();
-        var link = Ui.TextAction("настроить подключение", () => { _mode = Mode.Connection; _error = null; Render(); });
+        var link = Ui.TextAction("настроить подключение", () => Go(Mode.Connection));
         link.VerticalAlignment = VerticalAlignment.Top;
         DockPanel.SetDock(link, Dock.Right);
         row.Children.Add(link);
@@ -110,73 +109,106 @@ public sealed class LoginWindow : Window
 
     private static string Initials(string name)
     {
-        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(p => char.IsLetterOrDigit(p[0])).ToArray();
         return Ui.Upper(string.Concat(parts.Take(2).Select(p => p[0])));
     }
 
-    private FrameworkElement EnterView()
+    // ── Вход по логину и паролю ─────────────────────────
+    private FrameworkElement LoginView()
     {
-        var list = List();
-        var s = new StackPanel { MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Left };
-        s.Children.Add(Ui.H1("Рабочее пространство"));
-        s.Children.Add(Ui.Subtitle("Выберите своё пространство и введите пароль. У каждого сотрудника — свои группы, дети, баллы и настройки; другие сотрудники их не видят."));
+        var s = new StackPanel { MaxWidth = 440, HorizontalAlignment = HorizontalAlignment.Left };
+        s.Children.Add(Ui.H1("Вход"));
+        s.Children.Add(Ui.Subtitle("Введите логин и пароль. После входа откроется список ваших рабочих пространств."));
 
-        var rows = new StackPanel { Margin = new Thickness(0, 22, 0, 0) };
-        rows.Children.Add(Ui.Line(0, 0, dashed: false, color: Theme.Accent));
-        foreach (var w in list)
+        var login = Ui.Input(AppHost.Settings.LastLogin ?? "", "логин");
+        var pwd = new PasswordBox();
+        Ui.SetPlaceholder(pwd, "пароль");
+        Ui.SetIsInvalid(pwd, _error is not null);
+        var err = new StackPanel();
+        void Enter()
         {
-            var initials = new Border
-            {
-                Width = 30, Height = 30, CornerRadius = new CornerRadius(2), BorderThickness = new Thickness(1),
-                BorderBrush = w.Id == _selected ? Theme.Accent : Theme.Dash,
-                Background = w.Id == _selected ? Theme.Accent : Brushes.Transparent,
-                Child = new TextBlock { Text = Initials(w.Name), FontSize = 11, FontWeight = FontWeights.Bold, Foreground = w.Id == _selected ? Theme.Sheet : Theme.Ink2, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-            };
-            var text = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            text.Children.Add(new TextBlock { Text = w.Name, FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-            var meta = $"детей: {w.Children}" + (w.LastOpenedAt is { } lo ? $" · открывалось {lo:dd.MM.yyyy}" : $" · создано {w.CreatedAt:dd.MM.yyyy}");
-            text.Children.Add(new TextBlock { Text = meta, FontSize = 12, Foreground = Theme.Ink3 });
-            var content = new DockPanel();
-            content.Children.Add(initials);
-            content.Children.Add(text);
-            var row = new Button { Style = Ui.Style("TreeRow"), Content = content, MinHeight = 56 };
-            Ui.SetIsActive(row, w.Id == _selected);
-            var id = w.Id;
-            row.Click += (_, _) => { _selected = id; _error = null; Render(); };
-            rows.Children.Add(row);
+            if (login.Text.Trim().Length == 0 || pwd.Password.Length == 0) { Show("Введите логин и пароль."); return; }
+            UserInfo? user;
+            try { user = new Users(AppHost.Db!).Authenticate(login.Text, pwd.Password); }
+            catch (Exception e) { Show($"База недоступна: {e.Message}"); return; }
+            if (user is null) { Show("Неверный логин или пароль."); pwd.Clear(); pwd.Focus(); return; }
+            AppHost.SignIn(user);
+            Go(Mode.Choose);
         }
+        void Show(string text)
+        {
+            _error = text;
+            Ui.SetIsInvalid(pwd, true);
+            err.Children.Clear();
+            err.Children.Add(Ui.Status(text, false).Margin(0, 10, 0, 0));
+        }
+        login.KeyDown += (_, e) => { if (e.Key == Key.Enter) pwd.Focus(); };
+        pwd.KeyDown += (_, e) => { if (e.Key == Key.Enter) Enter(); };
+
+        var form = Ui.VStack(12, Ui.Field("Логин", login), Ui.Field("Пароль", pwd));
+        form.Margin = new Thickness(0, 22, 0, 0);
+        s.Children.Add(form);
+        var btn = Ui.Row(8, Ui.Primary("Войти", Enter, IconKind.Lock));
+        btn.Margin = new Thickness(0, 16, 0, 0);
+        s.Children.Add(btn);
+        s.Children.Add(err);
+
+        // новая база: пока есть только главный администратор, подсказываем стандартный вход
+        var fresh = false;
+        try { fresh = new Users(AppHost.Db!).List().Count == 1; } catch (Exception) { /* база недоступна — подсказки нет */ }
+        s.Children.Add(Ui.HelpNote(Ui.Faint(fresh
+            ? $"База новая. Первый вход — главный администратор: логин {UserRoles.DefaultLogin}, пароль {UserRoles.DefaultPassword}. Затем смените пароль и добавьте пользователей в «Администрирование → Пользователи»."
+            : "Логин и пароль выдаёт администратор. Забыли пароль — обратитесь к администратору: он задаст новый.")));
+        s.Children.Add(Footer());
+        Dispatcher.BeginInvoke(() => { if (login.Text.Length > 0) pwd.Focus(); else login.Focus(); }, System.Windows.Threading.DispatcherPriority.Input);
+        return s;
+    }
+
+    // ── Выбор рабочего пространства ─────────────────────
+    private FrameworkElement ChooseView()
+    {
+        var user = AppHost.User!;
+        List<WorkspaceInfo> list;
+        try { list = new Workspaces(AppHost.Db!).ListFor(user); }
+        catch (Exception e) { list = []; _error = $"База недоступна: {e.Message}"; }
+
+        var s = new StackPanel { MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
+        s.Children.Add(Ui.H1("Рабочие пространства"));
+        s.Children.Add(Ui.Subtitle(user.IsAdmin
+            ? "Все рабочие пространства базы. Свои открываются для работы, пространства других пользователей — только для просмотра; открытие записывается в их журнал."
+            : "Ваши рабочие пространства: в каждом — свои группы, дети, баллы и настройки. Другие пользователи их не видят."));
+
+        var who = new DockPanel { Margin = new Thickness(0, 16, 0, 0) };
+        var logout = Ui.TextAction("сменить пользователя", AppHost.SignOut);
+        DockPanel.SetDock(logout, Dock.Right);
+        who.Children.Add(logout);
+        who.Children.Add(Ui.Rich(Ui.Run("Вы вошли как "), Ui.Run(user.DisplayName, Theme.Ink, FontWeights.SemiBold), Ui.Run($" · {user.RoleTitle} · логин {user.Login}", Theme.Ink3))
+            .With(t => { t.FontSize = 13; t.TextWrapping = TextWrapping.Wrap; }));
+        s.Children.Add(who);
+
+        try
+        {
+            if (new Users(AppHost.Db!).HasDefaultPassword(user))
+                s.Children.Add(Ui.HelpNote(Ui.Faint($"У главного администратора стандартный пароль «{UserRoles.DefaultPassword}». Смените его в «Администрирование → Учётная запись»."), amber: true).Margin(0, 12, 0, 0));
+        }
+        catch (Exception) { /* база недоступна */ }
+
+        var own = list.Where(w => w.OwnerId == user.Id).ToList();
+        var others = list.Where(w => w.OwnerId != user.Id).ToList();
+        var rows = new StackPanel { Margin = new Thickness(0, 18, 0, 0) };
+        void Section(string? title, List<WorkspaceInfo> items)
+        {
+            if (title is not null) rows.Children.Add(Ui.Caps(title).Margin(0, rows.Children.Count > 0 ? 18 : 0, 0, 6));
+            rows.Children.Add(Ui.Line(0, 0, dashed: false, color: Theme.Accent));
+            foreach (var w in items) rows.Children.Add(WorkspaceRow(w, w.OwnerId == user.Id));
+        }
+        if (own.Count > 0 || others.Count == 0) Section(user.IsAdmin ? "Мои пространства" : null, own);
+        if (own.Count == 0) rows.Children.Add(Ui.Faint(others.Count > 0 ? "Своих пространств пока нет." : "У вас пока нет рабочих пространств — создайте первое.").Margin(0, 12, 0, 0));
+        if (others.Count > 0) Section("Пространства других пользователей · только просмотр", others);
         s.Children.Add(rows);
+        if (_error is not null) s.Children.Add(Ui.Status(_error, false).Margin(0, 10, 0, 0));
 
-        var sel = list.FirstOrDefault(w => w.Id == _selected);
-        if (sel is not null)
-        {
-            var pwd = new PasswordBox();
-            Ui.SetPlaceholder(pwd, "пароль рабочего пространства");
-            void Enter()
-            {
-                if (pwd.Password.Length == 0) { _error = "Введите пароль."; Render(); return; }
-                bool ok;
-                try { ok = new Workspaces(AppHost.Db!).Verify(sel.Id, pwd.Password); }
-                catch (Exception e) { _error = $"База недоступна: {e.Message}"; Render(); return; }
-                if (!ok) { _error = "Неверный пароль."; Render(); return; }
-                AppHost.SignIn(sel.Id, sel.Name);
-            }
-            pwd.KeyDown += (_, e) => { if (e.Key == Key.Enter) Enter(); };
-            Ui.SetIsInvalid(pwd, _error is not null);
-            var form = new StackPanel { Margin = new Thickness(0, 22, 0, 0) };
-            form.Children.Add(Ui.Field($"Пароль · {sel.Name}", pwd));
-            var btns = Ui.Row(8, Ui.Primary("Войти", Enter, IconKind.Lock));
-            btns.Margin = new Thickness(0, 12, 0, 0);
-            form.Children.Add(btns);
-            if (_error is not null) form.Children.Add(Ui.Status(_error, false).Margin(0, 10, 0, 0));
-            s.Children.Add(form);
-            Dispatcher.BeginInvoke(() => pwd.Focus(), System.Windows.Threading.DispatcherPriority.Input);
-        }
-        else if (list.Count > 0) s.Children.Add(Ui.Faint("Нажмите на своё рабочее пространство, чтобы ввести пароль.").Margin(0, 14, 0, 0));
-        else s.Children.Add(Ui.Faint("В этой базе пока нет рабочих пространств — создайте первое.").Margin(0, 14, 0, 0));
-        if (_error is not null && sel is null) s.Children.Add(Ui.Status(_error, false).Margin(0, 10, 0, 0));
-
-        var create = Ui.Ghost("Создать новое рабочее пространство", () => { _mode = Mode.Create; _error = null; Render(); }, IconKind.Plus);
+        var create = Ui.Ghost("Создать рабочее пространство", () => Go(Mode.Create), IconKind.Plus);
         create.Margin = new Thickness(0, 22, 0, 0);
         create.HorizontalAlignment = HorizontalAlignment.Left;
         s.Children.Add(create);
@@ -184,90 +216,84 @@ public sealed class LoginWindow : Window
         return s;
     }
 
+    private static FrameworkElement WorkspaceRow(WorkspaceInfo w, bool own)
+    {
+        var last = w.Id == AppHost.Settings.LastWorkspaceId;
+        var initials = new Border
+        {
+            Width = 30, Height = 30, CornerRadius = new CornerRadius(2), BorderThickness = new Thickness(1),
+            BorderBrush = last ? Theme.Accent : Theme.Dash,
+            Background = last ? Theme.Accent : Brushes.Transparent,
+            Child = new TextBlock { Text = Initials(w.Name), FontSize = 11, FontWeight = FontWeights.Bold, Foreground = last ? Theme.Sheet : Theme.Ink2, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        var text = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = w.Name, FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+        var meta = (own ? "" : $"владелец: {w.OwnerName} · ") + $"детей: {w.Children}" + (w.LastOpenedAt is { } lo ? $" · открывалось {lo:dd.MM.yyyy}" : $" · создано {w.CreatedAt:dd.MM.yyyy}");
+        text.Children.Add(new TextBlock { Text = meta, FontSize = 12, Foreground = Theme.Ink3, TextTrimming = TextTrimming.CharacterEllipsis });
+        var content = new DockPanel();
+        var open = new RIconText(own ? IconKind.Arrow : IconKind.Eye, own ? "открыть" : "смотреть");
+        DockPanel.SetDock(open, Dock.Right);
+        content.Children.Add(open);
+        content.Children.Add(initials);
+        content.Children.Add(text);
+        var row = new Button { Style = Ui.Style("TreeRow"), Content = content, MinHeight = 56, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        Ui.SetIsActive(row, last);
+        Ui.AutomationName(row, w.Name);
+        row.Click += (_, _) => AppHost.OpenWorkspace(w);
+        return row;
+    }
+
+    // Подпись «открыть →» справа в строке пространства
+    private sealed class RIconText : StackPanel
+    {
+        public RIconText(IconKind icon, string text)
+        {
+            Orientation = Orientation.Horizontal;
+            VerticalAlignment = VerticalAlignment.Center;
+            Margin = new Thickness(12, 0, 4, 0);
+            Children.Add(new TextBlock { Text = text, FontSize = 12, Foreground = Theme.Ink3, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+            Children.Add(new Rostok.Controls.Icon(icon, 14) { Foreground = Theme.Ink3, VerticalAlignment = VerticalAlignment.Center });
+        }
+    }
+
+    // ── Новое рабочее пространство ──────────────────────
     private FrameworkElement CreateView()
     {
+        var user = AppHost.User!;
         var s = new StackPanel { MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Left };
         s.Children.Add(Ui.H1("Новое рабочее пространство"));
-        s.Children.Add(Ui.Subtitle("Пространство — ваша личная рабочая область в общей базе: все группы, дети, баллы, упражнения, словари и настройки сохраняются только в нём. Вход — по паролю."));
+        s.Children.Add(Ui.Subtitle("Пространство — отдельное хранилище в общей базе: свои группы, дети, баллы, упражнения, словари и настройки. Оно будет принадлежать вам; видеть его смогут только вы и администраторы."));
 
         var name = Ui.Input("", "Например: Иванова Мария, логопед");
-        var pwd = new PasswordBox();
-        Ui.SetPlaceholder(pwd, $"не короче {Workspaces.MinPassword} символов");
-        var repeat = new PasswordBox();
-        Ui.SetPlaceholder(repeat, "ещё раз");
         var demo = new Checkbox("Добавить группу-пример с вымышленными детьми", true);
-
-        static Grid Pair(UIElement left, UIElement right)
-        {
-            var g = new Grid();
-            g.ColumnDefinitions.Add(new ColumnDefinition());
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-            g.ColumnDefinitions.Add(new ColumnDefinition());
-            g.Children.Add(left);
-            Grid.SetColumn(right, 2);
-            g.Children.Add(right);
-            return g;
-        }
-        var pwdRow = Pair(Ui.Field("Пароль", pwd), Ui.Field("Повторите пароль", repeat));
-
-        // Новая база: первый, кто создаёт пространство, может сразу задать пароль администратора базы —
-        // он нужен, чтобы назначить руководителя (старшего специалиста). Можно оставить пустым и задать позже.
-        var hasAny = List().Count > 0;
-        var askAdmin = !hasAny && !new Workspaces(AppHost.Db!).HasAdminPassword();
-        var admin = new PasswordBox();
-        Ui.SetPlaceholder(admin, "можно задать позже");
-        var adminRepeat = new PasswordBox();
-        Ui.SetPlaceholder(adminRepeat, "ещё раз");
-
+        var err = new StackPanel();
         void Create()
         {
             var ws = new Workspaces(AppHost.Db!);
-            _error = ws.ValidateName(name.Text) ?? Workspaces.ValidatePassword(pwd.Password, repeat.Password);
-            var withAdmin = askAdmin && (admin.Password.Length > 0 || adminRepeat.Password.Length > 0);
-            if (_error is null && withAdmin)
+            _error = ws.ValidateName(name.Text);
+            if (_error is null)
             {
-                _error = Workspaces.ValidatePassword(admin.Password, adminRepeat.Password) is { } adminError ? $"Пароль администратора базы: {adminError}" : null;
-                if (_error is null && admin.Password == pwd.Password) _error = "Пароль администратора базы должен отличаться от пароля пространства.";
-            }
-            if (_error is not null) { ShowError(); return; }
-            try
-            {
-                if (withAdmin) ws.SetAdminPassword(null, admin.Password);
-                var id = ws.Create(name.Text, pwd.Password);
-                if (demo.IsChecked == true)
+                try
                 {
-                    var store = Store.Open(AppHost.Db!, id, name.Text.Trim());
-                    store.Merge(Demo.Build());
+                    var id = ws.Create(name.Text, user.Id);
+                    if (demo.IsChecked == true) Store.Open(AppHost.Db!, id, name.Text.Trim()).Merge(Demo.Build());
+                    AppHost.OpenWorkspace(ws.Get(id)!);
+                    return;
                 }
-                AppHost.SignIn(id, name.Text.Trim());
+                catch (Exception e) { _error = e.Message; }
             }
-            catch (Exception e) { _error = e.Message; ShowError(); }
-        }
-
-        var err = new StackPanel();
-        void ShowError()
-        {
             err.Children.Clear();
-            if (_error is not null) err.Children.Add(Ui.Status(_error, false).Margin(0, 10, 0, 0));
+            err.Children.Add(Ui.Status(_error!, false).Margin(0, 10, 0, 0));
         }
-        repeat.KeyDown += (_, e) => { if (e.Key == Key.Enter && !askAdmin) Create(); };
-        adminRepeat.KeyDown += (_, e) => { if (e.Key == Key.Enter) Create(); };
+        name.KeyDown += (_, e) => { if (e.Key == Key.Enter) Create(); };
 
-        var form = Ui.VStack(12,
-            Ui.Field("Название рабочего пространства", name),
-            pwdRow,
-            askAdmin ? Ui.VStack(6,
-                Ui.H3("Администратор базы").Margin(0, 10, 0, 0),
-                Ui.Faint("База новая. Пароль администратора нужен, чтобы назначить руководителя — старшего специалиста, который видит пространства всех сотрудников. Это не пароль пространства: храните его отдельно.").With(t => t.TextWrapping = TextWrapping.Wrap),
-                Pair(Ui.Field("Пароль администратора базы", admin), Ui.Field("Повторите", adminRepeat))) : null,
-            demo);
+        var form = Ui.VStack(12, Ui.Field("Название рабочего пространства", name), demo);
         form.Margin = new Thickness(0, 22, 0, 0);
         s.Children.Add(form);
-        var btns = Ui.Row(8, Ui.Primary("Создать и войти", Create, IconKind.Plus), hasAny ? Ui.Ghost("Отмена", () => { _mode = Mode.Enter; _error = null; Render(); }) : null);
+        var btns = Ui.Row(8, Ui.Primary("Создать и открыть", Create, IconKind.Plus), Ui.Ghost("Отмена", () => Go(Mode.Choose)));
         btns.Margin = new Thickness(0, 16, 0, 0);
         s.Children.Add(btns);
         s.Children.Add(err);
-        s.Children.Add(Ui.HelpNote(Ui.Faint("Пароль восстановить нельзя: он хранится в базе только в виде хеша. Запишите его в надёжном месте. Сменить пароль можно в «Администрирование → Рабочее пространство»; забытый пароль может сбросить руководитель, если он назначен.")));
         s.Children.Add(Footer());
         Dispatcher.BeginInvoke(() => name.Focus(), System.Windows.Threading.DispatcherPriority.Input);
         return s;
@@ -279,13 +305,14 @@ public sealed class LoginWindow : Window
         s.Children.Add(Ui.H1("Подключение к базе данных"));
         s.Children.Add(Ui.Subtitle(AppHost.Db is null
             ? "Не удалось открыть базу данных. Укажите путь к файлу базы — на этом компьютере или в общей папке сети."
-            : "Файл базы, с которым работает программа на этом компьютере. Сотрудники в локальной сети могут работать с одним файлом в общей папке."));
-        var editor = new ConnectionEditor(() => { _selected = null; _mode = List().Count == 0 ? Mode.Create : Mode.Enter; Render(); });
+            : "Файл базы, с которым работает программа на этом компьютере. Пользователи в локальной сети могут работать с одним файлом в общей папке."));
+        // в другой базе свои пользователи: после подключения — снова вход по логину
+        var editor = new ConnectionEditor(() => Go(Mode.Login));
         editor.Margin = new Thickness(0, 22, 0, 0);
         s.Children.Add(editor);
         if (AppHost.Db is not null)
         {
-            var back = Ui.Ghost("Назад ко входу", () => { _mode = Mode.Enter; Render(); }, IconKind.ArrowBack);
+            var back = Ui.Ghost("Назад", () => Go(AppHost.User is null ? Mode.Login : Mode.Choose), IconKind.ArrowBack);
             back.HorizontalAlignment = HorizontalAlignment.Left;
             back.Margin = new Thickness(0, 18, 0, 0);
             s.Children.Add(back);

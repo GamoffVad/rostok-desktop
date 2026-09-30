@@ -10,13 +10,14 @@ namespace Rostok.Desktop.Services;
 // Режим снимков экрана для проверки дизайна и документации:
 //   Rostok.exe --shots <папка> [маршрут …]
 // Создаётся временная база с рабочим пространством-примером, каждый экран сохраняется в PNG целиком.
-// Первое пространство — руководитель; маршрут с приставкой «view:» снимается в пространстве второго сотрудника в режиме просмотра.
+// Снимает администратор Иванова; маршрут с приставкой «view:» — в пространстве пользователя Петровой в режиме просмотра.
+// «login» — вход, «choose» — выбор пространства, «login-new» — вход в пустой базе.
 public static class Shots
 {
     public static readonly string[] DefaultRoutes =
     [
-        "login", "/", "/child/{child}", "/child/{child}?tab=program", "/child/{child}?tab=report", "/exam?child={child}",
-        "/protocol", "/dynamics", "/library", "/parent/{child}", "/admin/data", "/admin/dicts", "/admin/ui", "/admin/workspace", "/admin/org", "/admin/connection", "/help",
+        "login", "choose", "/", "/child/{child}", "/child/{child}?tab=program", "/child/{child}?tab=report", "/exam?child={child}",
+        "/protocol", "/dynamics", "/library", "/parent/{child}", "/admin/data", "/admin/dicts", "/admin/ui", "/admin/workspace", "/admin/account", "/admin/users", "/admin/connection", "/help",
         "/org", "view:/", "view:/exam?child={child}",
     ];
 
@@ -36,7 +37,8 @@ public static class Shots
     {
         try
         {
-            // окно входа в новой, пустой базе: создание первого пространства и пароль администратора базы
+            AppHost.Ephemeral = true;
+            // окно входа в новой, пустой базе: подсказка про главного администратора
             if (routes.Contains("login-new"))
             {
                 var emptyPath = Path.Combine(Path.GetTempPath(), $"rostok-shots-{Guid.NewGuid():N}.db");
@@ -55,33 +57,38 @@ public static class Shots
             var dbPath = Path.Combine(Path.GetTempPath(), $"rostok-shots-{Guid.NewGuid():N}.db");
             var db = new Database(dbPath);
             db.EnsureCreated();
+            var users = new Users(db);
+            var ivanova = users.Get(users.Create("ivanova", "Иванова Мария, старший логопед", "1234", UserRoles.Admin))!;
+            var petrova = users.Get(users.Create("petrova", "Петрова Анна, психолог", "1234"))!;
+            users.Create("sidorova", "Сидорова Ольга, логопед", "1234");
+            users.ChangePassword(users.MainAdmin().Id, UserRoles.DefaultPassword, "надёжный пароль");
             var ws = new Workspaces(db);
-            var id = ws.Create("Иванова Мария, логопед", "1234");
-            Store.Open(db, id, "Иванова Мария, логопед").Merge(Demo.Build());
-            var other = ws.Create("Петрова Анна, психолог", "1234");
-            Store.Open(db, other, "Петрова Анна, психолог").Merge(Demo.Build());
-            ws.SetAdminPassword(null, "admin-1");
-            ws.SetRole(id, Roles.Supervisor, "admin-1");
+            var id = ws.Create("Логопедическая группа № 5", ivanova.Id);
+            Store.Open(db, id, "Логопедическая группа № 5").Merge(Demo.Build());
+            ws.Create("Индивидуальные занятия", ivanova.Id);
+            var other = ws.Create("Психолог — группа «Рябинка»", petrova.Id);
+            Store.Open(db, other, "Психолог — группа «Рябинка»").Merge(Demo.Build());
             AppHost.UseDatabase(db);
 
-            foreach (var r in routes.Where(r => r == "login"))
+            foreach (var r in routes.Where(r => r is "login" or "choose"))
             {
+                AppHost.UseUser(r == "choose" ? ivanova : null);
                 var login = new LoginWindow { Left = -20000, Top = 0, ShowActivated = false };
                 login.Show();
                 await Settle();
                 var lc = (FrameworkElement)login.Content;
-                Save(lc, Path.Combine(dir, "login.png"), lc.ActualWidth, lc.ActualHeight);
+                Save(lc, Path.Combine(dir, $"{r}.png"), lc.ActualWidth, lc.ActualHeight);
                 login.Close();
             }
 
-            AppHost.SignInForShots(id, "Иванова Мария, логопед");
+            AppHost.OpenForShots(ivanova, ws.Get(id)!);
             var main = AppHost.Main!;
             main.Left = -20000;
-            foreach (var route in routes.Where(r => r is not ("login" or "login-new")))
+            foreach (var route in routes.Where(r => r is not ("login" or "login-new" or "choose")))
             {
                 var view = route.StartsWith("view:");
                 if (view && !AppHost.IsViewing) AppHost.ViewAs(ws.Get(other)!);
-                if (!view && AppHost.IsViewing) AppHost.ReturnToOwn();
+                if (!view && AppHost.IsViewing) AppHost.ReturnHome();
                 var data = AppHost.Store!.Data;
                 var child = data.ChildrenOf(data.Groups[0].Id)[1].Id;
                 var path = (view ? route[5..] : route).Replace("{child}", child);

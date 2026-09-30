@@ -7,15 +7,27 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT
 );
 
-CREATE TABLE IF NOT EXISTS workspaces (
+-- пользователи: вход по логину и паролю (соль и хеш PBKDF2-SHA256)
+CREATE TABLE IF NOT EXISTS users (
   id             TEXT PRIMARY KEY,
-  name           TEXT NOT NULL,
+  login          TEXT NOT NULL,
+  name           TEXT NOT NULL DEFAULT '',
+  role           TEXT NOT NULL DEFAULT 'user', -- main_admin | admin | user
   password_hash  TEXT NOT NULL,
   password_salt  TEXT NOT NULL,
   iterations     INTEGER NOT NULL,
   created_at     TEXT NOT NULL,
-  last_opened_at TEXT,
-  role           TEXT NOT NULL DEFAULT 'employee' -- employee | supervisor (руководитель видит все пространства)
+  last_login_at  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_login ON users (login COLLATE NOCASE);
+
+-- рабочие пространства (хранилища) принадлежат пользователям; у базы прежних версий колонки owner_id нет — её добавляет миграция
+CREATE TABLE IF NOT EXISTS workspaces (
+  id             TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  owner_id       TEXT,
+  created_at     TEXT NOT NULL,
+  last_opened_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_workspaces_name ON workspaces (name COLLATE NOCASE);
 
@@ -89,13 +101,13 @@ CREATE TABLE IF NOT EXISTS settings (
   PRIMARY KEY (workspace_id, key)
 );
 
--- журнал: когда руководитель открывал пространство сотрудника или сбрасывал его пароль
+-- журнал: когда администратор открывал чужое рабочее пространство
 CREATE TABLE IF NOT EXISTS access_log (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   workspace_id TEXT NOT NULL,
   viewer_id    TEXT NOT NULL,
   viewer_name  TEXT NOT NULL,
-  action       TEXT NOT NULL, -- view | password_reset
+  action       TEXT NOT NULL, -- view (password_reset — записи версии 1.1)
   at           TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_access_log_workspace ON access_log (workspace_id, at);

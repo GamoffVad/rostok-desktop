@@ -115,19 +115,31 @@ public class StorageTests : IDisposable
         Assert.True(db.Exists);
         db.EnsureCreated(); // повторно — без ошибок
         Assert.Empty(new Workspaces(db).List());
+        // в новой базе есть только главный администратор admin / admin
+        var users = new Users(db);
+        var main = Assert.Single(users.List());
+        Assert.True(main.IsMainAdmin);
+        Assert.NotNull(users.Authenticate("admin", "admin"));
+        Assert.True(users.HasDefaultPassword(main));
     }
 
     [Fact]
-    public void WorkspacesAreIsolatedAndPasswordProtected()
+    public void WorkspacesAreIsolatedAndBelongToUsers()
     {
         var db = new Database(Path.Combine(_dir, "rostok.db"));
         db.EnsureCreated();
+        var users = new Users(db);
+        var ivanova = users.Get(users.Create("ivanova", "Иванова И. И.", "secret1"))!;
+        var petrova = users.Get(users.Create("petrova", "Петрова П. П.", "secret2"))!;
         var ws = new Workspaces(db);
-        var a = ws.Create("Иванова И. И.", "secret1");
-        var b = ws.Create("Петрова П. П.", "secret2");
+        var a = ws.Create("Иванова И. И.", ivanova.Id);
+        var b = ws.Create("Петрова П. П.", petrova.Id);
+        var a2 = ws.Create("Иванова — индивидуальные", ivanova.Id);
         Assert.NotNull(ws.ValidateName("иванова и. и."));
-        Assert.True(ws.Verify(a, "secret1"));
-        Assert.False(ws.Verify(a, "secret2"));
+        Assert.Equal(new[] { a, a2 }.Order(), ws.ListFor(ivanova).Select(w => w.Id).Order());
+        Assert.Equal([b], ws.ListFor(petrova).Select(w => w.Id));
+        Assert.Equal(3, ws.ListFor(users.MainAdmin()).Count);
+        Assert.Equal("Иванова И. И.", ws.Get(a)!.OwnerName);
 
         var sa = Store.Open(db, a, "Иванова");
         sa.Merge(Demo.Build());
@@ -141,10 +153,8 @@ public class StorageTests : IDisposable
         Assert.Equal("lex", again.Ui.SectionId);
         Assert.Equal(12 * 3, again.Data.Scores.Values.Sum(p => p.Count));
 
-        ws.ChangePassword(a, "secret1", "новый");
-        Assert.True(ws.Verify(a, "новый"));
-        ws.Delete(b, "secret2");
-        Assert.Single(ws.List());
+        ws.Delete(b);
+        Assert.Equal(2, ws.List().Count);
     }
 
     [Fact]
@@ -152,7 +162,7 @@ public class StorageTests : IDisposable
     {
         var db = new Database(Path.Combine(_dir, "rostok.db"));
         db.EnsureCreated();
-        var id = new Workspaces(db).Create("Тест", "1234");
+        var id = new Workspaces(db).Create("Тест", new Users(db).MainAdmin().Id);
         var s = Store.Open(db, id, "Тест");
         var g = s.AddGroup("Группа № 1");
         s.AddChildren(g.Id, ["Иванов Ваня", "Петров Петя"]);

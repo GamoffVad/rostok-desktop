@@ -4,21 +4,27 @@ using Rostok.Core.Storage;
 
 namespace Rostok.Desktop.Services;
 
-// Состояние программы: настройки компьютера, подключение к базе, открытое рабочее пространство и окна.
+// Состояние программы: настройки компьютера, подключение к базе, вошедший пользователь, открытое рабочее пространство и окна.
 public static class AppHost
 {
     public static AppSettings Settings { get; private set; } = new();
     public static Database? Db { get; private set; }
     public static string? DbError { get; private set; }
-    // Активное пространство: своё или — у руководителя — открытое для просмотра пространство сотрудника.
+    // Вошедший пользователь (вход по логину и паролю).
+    public static UserInfo? User { get; private set; }
+    public static bool IsAdmin => User?.IsAdmin == true;
+    // Активное пространство: выбранное при входе или — у администратора — открытое с экрана «Организация».
     public static Store? Store { get; private set; }
-    // Своё пространство вошедшего сотрудника.
-    public static Store? OwnStore { get; private set; }
-    // Вошедший — руководитель (старший специалист): видит пространства всех сотрудников.
-    public static bool IsSupervisor { get; private set; }
-    public static bool IsViewing => Store is not null && OwnStore is not null && !ReferenceEquals(Store, OwnStore);
+    // Пространство, выбранное при входе: к нему ведёт кнопка «Вернуться».
+    public static Store? HomeStore { get; private set; }
+    // Чужое пространство (администратор смотрит пространство другого пользователя): только чтение.
+    public static bool IsViewing => Store?.ReadOnly == true;
+    public static bool CanReturnHome => Store is not null && HomeStore is not null && !ReferenceEquals(Store, HomeStore);
+    // Владелец открытого пространства — для плашки режима просмотра.
+    public static string OwnerName { get; private set; } = "";
     public static MainWindow? Main { get; private set; }
     private static LoginWindow? _login;
+    private static string _homeOwner = "";
 
     public static string Version
     {
@@ -39,7 +45,7 @@ public static class AppHost
         ShowLogin();
     }
 
-    // Открывает базу по пути из настроек; если файла нет — создаёт его со всеми таблицами.
+    // Открывает базу по пути из настроек; если файла нет — создаёт его со всеми таблицами и главным администратором.
     public static bool OpenDatabase()
     {
         try
@@ -59,15 +65,9 @@ public static class AppHost
     }
 
     internal static void UseDatabase(Database db) { Db = db; DbError = null; }
-
-    // Вход без записи настроек компьютера — для режима снимков экрана.
-    internal static void SignInForShots(string workspaceId, string name)
-    {
-        Store = OwnStore = Store.Open(Db!, workspaceId, name);
-        IsSupervisor = new Workspaces(Db!).Get(workspaceId)?.IsSupervisor ?? false;
-        Main = new MainWindow { ShowActivated = false };
-        Main.Show();
-    }
+    internal static void UseUser(UserInfo? user) => User = user;
+    // самопроверка и снимки не трогают настройки этого компьютера
+    internal static bool Ephemeral { get; set; }
 
     public static void ShowLogin()
     {
@@ -76,14 +76,25 @@ public static class AppHost
         _login.Show();
     }
 
-    public static void SignIn(string workspaceId, string name)
+    // Логин и пароль проверены: окно входа переходит к выбору рабочего пространства.
+    public static void SignIn(UserInfo user)
     {
-        var ws = new Workspaces(Db!);
-        ws.MarkOpened(workspaceId);
-        Store = OwnStore = Store.Open(Db!, workspaceId, name);
-        IsSupervisor = ws.Get(workspaceId)?.IsSupervisor ?? false;
-        Settings.LastWorkspaceId = workspaceId;
-        try { Settings.Save(); } catch (Exception) { /* настройки компьютера не записались — не критично */ }
+        User = user;
+        Settings.LastLogin = user.Login;
+        SaveSettings();
+    }
+
+    public static void RefreshUser()
+    {
+        if (User is not null && Db is not null) User = new Users(Db).Get(User.Id) ?? User;
+    }
+
+    // Открыть пространство, выбранное при входе. Своё — для работы, чужое (только администратору) — для просмотра.
+    public static void OpenWorkspace(WorkspaceInfo w)
+    {
+        if (OpenStore(w) is null) return;
+        Settings.LastWorkspaceId = w.Id;
+        SaveSettings();
         Main = new MainWindow();
         Application.Current.MainWindow = Main;
         Main.Show();
@@ -91,35 +102,85 @@ public static class AppHost
         _login = null;
     }
 
-    // Смена рабочего пространства: окно программы закрывается, снова показывается вход.
-    public static void SignOut()
+    // Вход без окна входа и без записи настроек компьютера — для снимков экрана и самопроверки.
+    internal static void OpenForShots(UserInfo user, WorkspaceInfo w)
+    {
+        User = user;
+        if (OpenStore(w) is null) return;
+        Main = new MainWindow { ShowActivated = false };
+        Main.Show();
+    }
+
+    private static Store? OpenStore(WorkspaceInfo w)
+    {
+        if (User is null || Db is null || !Workspaces.CanOpen(User, w)) return null;
+        var store = Open(w);
+        Store = HomeStore = store;
+        OwnerName = _homeOwner = w.OwnerName;
+        return store;
+    }
+
+    private static Store Open(WorkspaceInfo w)
+    {
+        var ws = new Workspaces(Db!);
+        if (Workspaces.CanEdit(User!, w))
+        {
+            ws.MarkOpened(w.Id);
+            return Store.Open(Db!, w.Id, w.Name);
+        }
+        // чужое пространство: только чтение, открытие записывается в журнал владельца
+        var view = Store.Open(Db!, w.Id, w.Name, readOnly: true);
+        view.Blocked += () => Main?.ShowBlocked();
+        ws.LogAccess(w.Id, User!.Id, User.DisplayName, "view");
+        return view;
+    }
+
+    // Администратор открывает пространство с экрана «Организация».
+    public static void ViewAs(WorkspaceInfo target)
+    {
+        if (User is null || Db is null || !Workspaces.CanOpen(User, target)) return;
+        if (target.Id == HomeStore?.WorkspaceId) { ReturnHome(); return; }
+        var store = Open(target);
+        OwnerName = target.OwnerName;
+        if (store.ReadOnly) Store = store;
+        else
+        {
+            // своё пространство становится основным
+            Store = HomeStore = store;
+            _homeOwner = target.OwnerName;
+        }
+        Main?.Navigate(Services.Route.Of("/"));
+    }
+
+    public static void ReturnHome()
+    {
+        if (HomeStore is null) return;
+        Store = HomeStore;
+        OwnerName = _homeOwner;
+        HomeStore.Activate();
+        Main?.Navigate(Services.Route.Of(IsAdmin ? "/org" : "/"));
+    }
+
+    // Сменить рабочее пространство: окно программы закрывается, открывается выбор пространства того же пользователя.
+    public static void SwitchWorkspace()
     {
         var main = Main;
         Main = null;
-        Store = OwnStore = null;
-        IsSupervisor = false;
+        Store = HomeStore = null;
+        RefreshUser();
         ShowLogin();
         main?.Close();
     }
 
-    // Руководитель открывает пространство сотрудника только для просмотра; открытие записывается в журнал сотрудника.
-    public static void ViewAs(WorkspaceInfo target)
+    // Выход: следующий вход — снова с логином и паролем.
+    public static void SignOut()
     {
-        if (!IsSupervisor || OwnStore is null || Db is null) return;
-        if (target.Id == OwnStore.WorkspaceId) { ReturnToOwn(); return; }
-        var view = Store.Open(Db, target.Id, target.Name, readOnly: true);
-        view.Blocked += () => Main?.ShowBlocked();
-        new Workspaces(Db).LogAccess(target.Id, OwnStore.WorkspaceId, OwnStore.WorkspaceName, "view");
-        Store = view;
-        Main?.Navigate(Services.Route.Of("/"));
-    }
-
-    public static void ReturnToOwn()
-    {
-        if (OwnStore is null) return;
-        Store = OwnStore;
-        OwnStore.Activate();
-        Main?.Navigate(Services.Route.Of("/org"));
+        var main = Main;
+        Main = null;
+        Store = HomeStore = null;
+        User = null;
+        ShowLogin();
+        main?.Close();
     }
 
     // Новое подключение к базе: сохраняем путь этого компьютера (null — путь по умолчанию) и открываем базу заново.
@@ -128,7 +189,14 @@ public static class AppHost
         Settings.DatabasePath = string.IsNullOrWhiteSpace(path) ? null : path.Trim();
         Settings.LastWorkspaceId = null;
         Settings.Save();
+        User = null;
         return OpenDatabase();
+    }
+
+    private static void SaveSettings()
+    {
+        if (Ephemeral) return;
+        try { Settings.Save(); } catch (Exception) { /* настройки компьютера не записались — не критично */ }
     }
 
     public static void Quit() => Application.Current.Shutdown();

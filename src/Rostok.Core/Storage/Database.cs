@@ -7,8 +7,9 @@ namespace Rostok.Core.Storage;
 // Если файла нет, он создаётся при первом открытии вместе со всеми таблицами.
 public sealed class Database
 {
-    // 1 — первая версия; 2 — роль пространства (руководитель) и журнал просмотров
-    public const int SchemaVersion = 2;
+    // 1 — первая версия; 2 — роль пространства (руководитель) и журнал просмотров;
+    // 3 — пользователи с логином и паролем, пространства без паролей принадлежат пользователям
+    public const int SchemaVersion = 3;
 
     public string Path { get; }
     private readonly string _connectionString;
@@ -42,19 +43,66 @@ public sealed class Database
         tx.Commit();
     }
 
-    // Базы прежних версий: CREATE TABLE IF NOT EXISTS не добавляет новых колонок — дописываем их сами.
+    // Базы прежних версий: CREATE TABLE IF NOT EXISTS не меняет существующих таблиц — доводим их сами.
     private static void Migrate(SqliteConnection c, SqliteTransaction tx)
     {
-        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using (var cmd = c.CreateCommand())
+        // главный администратор есть в каждой базе: логин admin, пароль admin (программа напомнит сменить)
+        var mainId = Scalar(c, tx, "SELECT id FROM users WHERE role = $r", ("$r", UserRoles.MainAdmin)) as string;
+        if (mainId is null)
         {
-            cmd.Transaction = tx;
-            cmd.CommandText = "PRAGMA table_info(workspaces)";
-            using var r = cmd.ExecuteReader();
-            while (r.Read()) columns.Add(r.GetString(1));
+            var login = UniqueLogin(c, tx, UserRoles.DefaultLogin);
+            mainId = Users.Insert(c, tx, login, "Главный администратор", UserRoles.DefaultPassword, UserRoles.MainAdmin);
         }
-        if (!columns.Contains("role"))
-            Exec(c, tx, "ALTER TABLE workspaces ADD COLUMN role TEXT NOT NULL DEFAULT 'employee'");
+
+        var columns = Columns(c, tx, "workspaces");
+        if (!columns.Contains("owner_id")) Exec(c, tx, "ALTER TABLE workspaces ADD COLUMN owner_id TEXT");
+
+        // версии 1.0–1.1: у каждого пространства был свой пароль. Пространство становится пользователем
+        // с тем же паролем (логин — название пространства); руководитель — администратором.
+        if (columns.Contains("password_hash"))
+        {
+            var hasRole = columns.Contains("role");
+            var rows = new List<(string Id, string Name, string Hash, string Salt, int It, string Role)>();
+            using (var cmd = c.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = $"SELECT id, name, password_hash, password_salt, iterations, {(hasRole ? "role" : "'employee'")} FROM workspaces WHERE owner_id IS NULL";
+                using var r = cmd.ExecuteReader();
+                while (r.Read()) rows.Add((r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetInt32(4), r.GetString(5)));
+            }
+            foreach (var w in rows)
+            {
+                var login = UniqueLogin(c, tx, w.Name);
+                var uid = Users.InsertHashed(c, tx, login, w.Name, w.Role == "supervisor" ? UserRoles.Admin : UserRoles.User, w.Hash, w.Salt, w.It);
+                Exec(c, tx, "UPDATE workspaces SET owner_id = $u WHERE id = $id", ("$u", uid), ("$id", w.Id));
+            }
+            foreach (var col in new[] { "password_hash", "password_salt", "iterations", "role" })
+                if (columns.Contains(col)) Exec(c, tx, $"ALTER TABLE workspaces DROP COLUMN {col}");
+        }
+        Exec(c, tx, "UPDATE workspaces SET owner_id = $m WHERE owner_id IS NULL OR owner_id NOT IN (SELECT id FROM users)", ("$m", mainId));
+        // пароль администратора базы (версия 1.1) больше не нужен: роли назначает администратор
+        Exec(c, tx, "DELETE FROM meta WHERE key IN ('admin_hash', 'admin_salt', 'admin_iterations')");
+    }
+
+    private static HashSet<string> Columns(SqliteConnection c, SqliteTransaction tx, string table)
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using var cmd = c.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"PRAGMA table_info({table})";
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) columns.Add(r.GetString(1));
+        return columns;
+    }
+
+    private static string UniqueLogin(SqliteConnection c, SqliteTransaction tx, string wanted)
+    {
+        var login = wanted.Trim();
+        if (login.Length == 0) login = "пользователь";
+        var candidate = login;
+        for (var i = 2; Convert.ToInt32(Scalar(c, tx, "SELECT COUNT(*) FROM users WHERE login = $l COLLATE NOCASE", ("$l", candidate))) > 0; i++)
+            candidate = $"{login} {i}";
+        return candidate;
     }
 
     public SqliteConnection Open()

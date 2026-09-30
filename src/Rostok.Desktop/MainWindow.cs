@@ -27,7 +27,7 @@ public sealed class MainWindow : Window
     private readonly ScrollViewer _scroll;
     private readonly Border _page = new() { MaxWidth = 1320, Padding = new Thickness(0, 0, 0, 40) };
     private readonly TextBlock _status;
-    // Плашка режима просмотра: руководитель смотрит пространство сотрудника
+    // Плашка режима просмотра: администратор смотрит пространство другого пользователя
     private readonly Border _viewBar = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
     private readonly TextBlock _viewText = new() { FontSize = 13, Foreground = Theme.Ink, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _viewHint = new() { FontSize = 12, Foreground = Theme.Ink3, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
@@ -37,6 +37,7 @@ public sealed class MainWindow : Window
     private PageBase? _current;
     private readonly FrameworkElement _head;
     private readonly FrameworkElement _footer;
+    private readonly Button _back;
 
     public MainWindow()
     {
@@ -99,7 +100,8 @@ public sealed class MainWindow : Window
             Content = new Border { Padding = new Thickness(40, 0, 40, 0), Child = _page },
         };
 
-        var back = Ui.Ghost("Вернуться в своё пространство", AppHost.ReturnToOwn, IconKind.ArrowBack);
+        // «Вернуться» — к пространству, выбранному при входе; если оно само чужое — к выбору пространства
+        var back = _back = Ui.Ghost("", () => { if (AppHost.CanReturnHome) AppHost.ReturnHome(); else AppHost.SwitchWorkspace(); }, IconKind.ArrowBack);
         back.MinHeight = 34;
         var viewRow = new DockPanel();
         DockPanel.SetDock(back, Dock.Right);
@@ -152,7 +154,7 @@ public sealed class MainWindow : Window
             "help" => new HelpPage(route),
             "admin" => new AdminPage(route),
             "library" => new LibraryPage(route),
-            "org" when AppHost.IsSupervisor && !AppHost.IsViewing => new OrganizationPage(route),
+            "org" when AppHost.IsAdmin => new OrganizationPage(route),
             _ when empty => new WelcomePage(route),
             "child" => new ChildPage(route),
             "exam" => new ExamPage(route),
@@ -204,24 +206,24 @@ public sealed class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center, MaxWidth = 240, TextTrimming = TextTrimming.CharacterEllipsis,
         });
         ws.ToolTip = viewing
-            ? "Вы смотрите пространство сотрудника: изменить ничего нельзя"
-            : AppHost.IsSupervisor ? "Ваше рабочее пространство · вы руководитель и видите пространства всех сотрудников" : "Рабочее пространство: все данные и настройки сохраняются только в нём";
+            ? $"Пространство пользователя {AppHost.OwnerName}: только просмотр · вы — {AppHost.User?.DisplayName}"
+            : $"Рабочее пространство: все данные и настройки сохраняются только в нём · {AppHost.User?.DisplayName}, {AppHost.User?.RoleTitle}";
         _tools.Children.Add(ws);
 
-        // руководитель: экран «Организация» — пространства всех сотрудников
-        if (AppHost.IsSupervisor)
+        // администратор: экран «Организация» — рабочие пространства всех пользователей
+        if (AppHost.IsAdmin)
         {
-            var org = Ui.IconButton(IconKind.Building, "Организация: пространства всех сотрудников", () => { if (AppHost.IsViewing) AppHost.ReturnToOwn(); else Navigate(Route.Of("/org")); });
-            Ui.SetIsActive(org, section == "org" && !viewing);
+            var org = Ui.IconButton(IconKind.Building, "Организация: рабочие пространства всех пользователей", () => Navigate(Route.Of("/org")));
+            Ui.SetIsActive(org, section == "org");
             org.Margin = new Thickness(0, 0, 6, 0);
             _tools.Children.Add(org);
         }
 
-        var admin = Ui.IconButton(IconKind.Gear, "Администрирование: данные, словари, подключение к базе", () => Navigate(Route.Of("/admin/data")));
+        var admin = Ui.IconButton(IconKind.Gear, "Администрирование: данные, словари, пользователи, подключение к базе", () => Navigate(Route.Of(AppHost.IsViewing ? "/admin/dicts" : "/admin/data")));
         Ui.SetIsActive(admin, section == "admin");
         var help = Ui.IconButton(IconKind.Help, "Справка по методике", () => Navigate(Route.Of("/help")));
         Ui.SetIsActive(help, section == "help");
-        var logout = Ui.IconButton(IconKind.Logout, "Сменить рабочее пространство", AppHost.SignOut);
+        var logout = Ui.IconButton(IconKind.Logout, "Сменить рабочее пространство или пользователя", AppHost.SwitchWorkspace);
         admin.Margin = help.Margin = new Thickness(0, 0, 6, 0);
         _tools.Children.Add(admin);
         _tools.Children.Add(help);
@@ -267,7 +269,7 @@ public sealed class MainWindow : Window
     // Попытка изменить данные в режиме просмотра — напоминаем на плашке.
     public void ShowBlocked()
     {
-        _viewHint.Text = "Изменения в режиме просмотра не сохраняются — это пространство сотрудника.";
+        _viewHint.Text = "Изменения в режиме просмотра не сохраняются — это пространство другого пользователя.";
         _viewHint.Foreground = Theme.Danger;
     }
 
@@ -279,9 +281,10 @@ public sealed class MainWindow : Window
         _viewBar.Visibility = viewing ? Visibility.Visible : Visibility.Collapsed;
         if (viewing)
         {
-            _viewText.Text = $"Просмотр пространства «{store.WorkspaceName}» · только чтение";
-            _viewHint.Text = "Видны все экраны, отчёты и выгрузки; изменить ничего нельзя. Открытие записано в журнал сотрудника.";
+            _viewText.Text = $"Просмотр пространства «{store.WorkspaceName}» · владелец {AppHost.OwnerName} · только чтение";
+            _viewHint.Text = "Видны все экраны, отчёты и выгрузки; изменить ничего нельзя. Открытие записано в журнал владельца.";
             _viewHint.Foreground = Theme.Ink3;
+            _back.Content = Ui.Content(IconKind.ArrowBack, AppHost.CanReturnHome ? $"Вернуться в «{AppHost.HomeStore!.WorkspaceName}»" : "К выбору пространства");
         }
         Title = viewing ? $"Росток — просмотр «{store.WorkspaceName}»" : $"Росток — {store.WorkspaceName}";
         _footerText.Text = $"Росток — динамика развития ребёнка · {(viewing ? "просмотр пространства" : "рабочее пространство")} «{store.WorkspaceName}» · база: {store.Db.Path}";

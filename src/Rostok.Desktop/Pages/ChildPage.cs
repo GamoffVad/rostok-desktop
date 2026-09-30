@@ -148,7 +148,7 @@ public sealed class ChildPage(Route route) : PageBase(route)
         return Ui.VStack(0, fields, Ui.H3("Родители и родственники").Margin(0, 20, 0, 8), new RelativesEditor(form.Relatives, Update), actions);
     }
 
-    // Сведения о ребёнке без полей ввода — для режима просмотра руководителем.
+    // Сведения о ребёнке без полей ввода — для режима просмотра чужого пространства.
     private static FrameworkElement ChildInfo(Child child)
     {
         static UIElement Value(string text) => text.Trim().Length > 0

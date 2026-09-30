@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Rostok.Core.Storage;
 
-// Настройки этого компьютера: путь к базе данных и последнее открытое рабочее пространство.
+// Настройки этого компьютера: путь к базе данных, последний логин и последнее открытое рабочее пространство.
 // Порядок: %APPDATA%\Rostok\settings.json → appsettings.json рядом с программой → Data\rostok.db в папке программы.
 // Данные и настройки сотрудника хранятся не здесь, а в его рабочем пространстве в базе.
 public sealed class AppSettings
@@ -14,6 +14,7 @@ public sealed class AppSettings
 
     public string? DatabasePath { get; set; }
     public string? LastWorkspaceId { get; set; }
+    public string? LastLogin { get; set; }
 
     [JsonIgnore]
     public static string UserFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Rostok", "settings.json");

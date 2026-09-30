@@ -8,7 +8,7 @@ using Rostok.Desktop.Services;
 
 namespace Rostok.Desktop.Pages;
 
-// «Администрирование»: данные, словари, компоненты, рабочее пространство, подключение к базе.
+// «Администрирование»: данные, словари, компоненты, рабочее пространство, учётная запись, пользователи, подключение к базе.
 public sealed class AdminPage(Route route) : PageBase(route)
 {
     private static readonly (string Id, string Label, string Subtitle)[] Tabs =
@@ -16,29 +16,33 @@ public sealed class AdminPage(Route route) : PageBase(route)
         ("data", "Данные", "Резервная копия, загрузка прежнего файла Excel, учебные годы. Данные хранятся в базе, в вашем рабочем пространстве, — раз в неделю выгружайте резервную копию."),
         ("dicts", "Словари", "Все словарные значения приложения: названия уровней и этапов, разделов и проб, итогов, направлений работы, подсказки для контактов родителей. Правки действуют только в вашем рабочем пространстве."),
         ("ui", "Компоненты", "Библиотека компонентов «Росток»: из неё собраны все экраны. Каждый элемент — вживую и во всех состояниях."),
-        ("workspace", "Рабочее пространство", "Название и пароль вашего рабочего пространства. Все группы, дети, баллы, упражнения, словари и настройки хранятся только в нём."),
-        ("org", "Организация", "Пароль администратора базы и роль «Руководитель»: старший специалист видит пространства всех сотрудников без их паролей — только для просмотра."),
+        ("workspace", "Рабочее пространство", "Название открытого рабочего пространства, его удаление и журнал просмотров. Все группы, дети, баллы, упражнения, словари и настройки хранятся только в нём."),
+        ("account", "Учётная запись", "Ваш логин, роль и пароль для входа в программу."),
+        ("users", "Пользователи", "Пользователи программы и их роли: администратор видит рабочие пространства всех пользователей, пользователь — только свои. Здесь же — владельцы пространств."),
         ("connection", "Подключение", "Файл базы данных, с которым работает программа на этом компьютере: локально или в общей папке локальной сети."),
     ];
 
-    // В режиме просмотра чужого пространства — только словари (для чтения) и витрина компонентов.
-    private static readonly string[] ViewTabs = ["dicts", "ui"];
+    // В режиме просмотра чужого пространства — словари (для чтения), витрина компонентов, учётная запись и пользователи.
+    private static readonly string[] ViewTabs = ["dicts", "ui", "account", "users"];
 
     private DataTab? _data;
     private DictsTab? _dicts;
     private ComponentsTab? _kit;
     private WorkspaceTab? _ws;
-    private OrgTab? _org;
+    private AccountTab? _account;
+    private UsersTab? _users;
 
     protected override UIElement Build()
     {
-        var tabs = ViewOnly ? Tabs.Where(t => ViewTabs.Contains(t.Id)).ToArray() : Tabs;
+        // «Пользователи» — только администраторам
+        var tabs = Tabs.Where(t => (!ViewOnly || ViewTabs.Contains(t.Id)) && (t.Id != "users" || AppHost.IsAdmin)).ToArray();
         var tab = tabs.FirstOrDefault(t => t.Id == Route.Part(1));
         if (tab.Id is null) tab = tabs[0];
         UIElement body = tab.Id switch
         {
             "dicts" => (_dicts ??= new DictsTab(Refresh)).Build(),
-            "org" => (_org ??= new OrgTab(Refresh)).Build(),
+            "account" => (_account ??= new AccountTab(Refresh)).Build(),
+            "users" => (_users ??= new UsersTab(Refresh)).Build(),
             "ui" => (_kit ??= new ComponentsTab()).Build(),
             "workspace" => (_ws ??= new WorkspaceTab(Refresh)).Build(),
             "connection" => ConnectionTab(),
@@ -54,13 +58,13 @@ public sealed class AdminPage(Route route) : PageBase(route)
     {
         var editor = new ConnectionEditor(() =>
         {
-            // другая база — другой набор рабочих пространств: возвращаемся ко входу
+            // другая база — свои пользователи и пространства: возвращаемся ко входу
             AppHost.SignOut();
         });
         editor.MaxWidth = 720;
         editor.HorizontalAlignment = HorizontalAlignment.Left;
         return Ui.Card(Ui.VStack(0, Ui.BlockHead(Ui.H2("Подключение к базе данных")),
-            Ui.Faint("После подключения к другой базе программа вернётся к выбору рабочего пространства: в новой базе может быть свой список сотрудников.").Margin(0, 0, 0, 16).With(t => t.MaxWidth = 720), editor), top: false);
+            Ui.Faint("После подключения к другой базе программа вернётся ко входу: в новой базе свои пользователи и рабочие пространства.").Margin(0, 0, 0, 16).With(t => t.MaxWidth = 720), editor), top: false);
     }
 }
 
@@ -174,7 +178,7 @@ public sealed class DataTab(Action refresh)
 // ── Рабочее пространство ──────────────────────────────
 public sealed class WorkspaceTab(Action refresh)
 {
-    private (bool Ok, string Text)? _nameStatus, _pwdStatus, _delStatus;
+    private (bool Ok, string Text)? _nameStatus, _delStatus;
     private bool _askDelete;
     private static Store S => AppHost.Store!;
 
@@ -204,53 +208,28 @@ public sealed class WorkspaceTab(Action refresh)
             saveName.With(b => b.HorizontalAlignment = HorizontalAlignment.Left),
             _nameStatus is { } ns ? Ui.Status(ns.Text, ns.Ok) : null), top: false, padTop: 0));
 
-        var cur = new PasswordBox();
-        var next = new PasswordBox();
-        var rep = new PasswordBox();
-        Ui.SetPlaceholder(cur, "текущий пароль");
-        Ui.SetPlaceholder(next, $"не короче {Workspaces.MinPassword} символов");
-        Ui.SetPlaceholder(rep, "ещё раз");
-        var change = Ui.Ghost("Сменить пароль", () =>
-        {
-            var err = Workspaces.ValidatePassword(next.Password, rep.Password);
-            if (err is not null) { _pwdStatus = (false, err); refresh(); return; }
-            try { ws.ChangePassword(S.WorkspaceId, cur.Password, next.Password); _pwdStatus = (true, "Пароль изменён."); }
-            catch (Exception e) { _pwdStatus = (false, e.Message); }
-            refresh();
-        }, IconKind.Lock);
-        page.Children.Add(Ui.Card(Ui.VStack(12,
-            Ui.BlockHead(Ui.H2("Пароль"), null, 0),
-            Ui.Field("Текущий пароль", cur),
-            Ui.Field("Новый пароль", next),
-            Ui.Field("Повторите новый пароль", rep),
-            change.With(b => b.HorizontalAlignment = HorizontalAlignment.Left),
-            _pwdStatus is { } ps ? Ui.Status(ps.Text, ps.Ok) : null)));
-
         var del = new StackPanel();
         del.Children.Add(Ui.BlockHead(Ui.H2("Удаление рабочего пространства")));
         del.Children.Add(Ui.Faint("Удаляется само пространство и все его данные: группы, дети, баллы, программы, упражнения, словари и настройки. Отменить нельзя — сначала выгрузите резервную копию на вкладке «Данные».").With(t => t.Margin = new Thickness(0, 0, 0, 12)));
         if (_askDelete)
         {
-            var pwd = new PasswordBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
-            Ui.SetPlaceholder(pwd, "пароль рабочего пространства");
-            del.Children.Add(Ui.Field("Подтвердите паролем", pwd));
             del.Children.Add(Ui.Row(8,
-                Ui.Danger("Удалить пространство и все данные", () =>
+                Ui.Danger("Да, удалить пространство и все данные", () =>
                 {
-                    try { ws.Delete(S.WorkspaceId, pwd.Password); AppHost.Settings.LastWorkspaceId = null; AppHost.SignOut(); }
+                    try { ws.Delete(S.WorkspaceId); AppHost.Settings.LastWorkspaceId = null; AppHost.SwitchWorkspace(); }
                     catch (Exception e) { _delStatus = (false, e.Message); refresh(); }
                 }, IconKind.Trash),
-                Ui.Ghost("Отмена", () => { _askDelete = false; _delStatus = null; refresh(); })).Margin(0, 12, 0, 0));
+                Ui.Ghost("Отмена", () => { _askDelete = false; _delStatus = null; refresh(); })));
             if (_delStatus is { } ds) del.Children.Add(Ui.Status(ds.Text, ds.Ok).Margin(0, 10, 0, 0));
         }
         else del.Children.Add(Ui.Ghost("Удалить рабочее пространство", () => { _askDelete = true; refresh(); }, IconKind.Trash).With(b => b.HorizontalAlignment = HorizontalAlignment.Left));
         page.Children.Add(Ui.Card(del));
 
-        // журнал: когда руководитель открывал это пространство или сбрасывал пароль
+        // журнал: когда администраторы открывали это пространство
         var log = ws.AccessLog(S.WorkspaceId);
         var journal = new StackPanel();
-        journal.Children.Add(Ui.BlockHead(Ui.H2("Журнал просмотров руководителем")));
-        if (log.Count == 0) journal.Children.Add(Ui.Faint("Руководитель ещё не открывал ваше пространство."));
+        journal.Children.Add(Ui.BlockHead(Ui.H2("Журнал просмотров администраторами")));
+        if (log.Count == 0) journal.Children.Add(Ui.Faint("Администраторы ещё не открывали это пространство."));
         else
         {
             var t = new Tbl(Col.Auto(), Col.Star(), Col.Star());

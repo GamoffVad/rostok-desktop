@@ -35,7 +35,7 @@ public sealed class Store
     // Текст последней ошибки записи: база недоступна, файл занят, нет прав на папку…
     public string? SaveError { get; private set; }
 
-    // Только чтение: руководитель смотрит пространство сотрудника — ни одно действие ничего не меняет ни в памяти, ни в базе.
+    // Только чтение: администратор смотрит чужое пространство — ни одно действие ничего не меняет ни в памяти, ни в базе.
     public bool ReadOnly { get; }
 
     public event Action? Changed;
@@ -264,7 +264,7 @@ public sealed class Store
     public void SetUi(Action<UiState> patch)
     {
         patch(Ui);
-        // выбор руководителя на экранах не записывается в настройки сотрудника
+        // выбор администратора на экранах не записывается в настройки владельца
         if (ReadOnly) { UiChanged?.Invoke(); return; }
         Persist((c, tx) => WriteSetting(c, tx, "ui", JsonSerializer.Serialize(Ui, Json)));
         UiChanged?.Invoke();

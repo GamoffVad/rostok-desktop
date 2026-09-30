@@ -15,9 +15,9 @@ public sealed class WelcomePage(Route route) : PageBase(route)
 
     protected override UIElement Build()
     {
-        // руководитель открыл пустое пространство сотрудника: создавать в нём ничего нельзя
+        // администратор открыл пустое чужое пространство: создавать в нём ничего нельзя
         if (ViewOnly)
-            return Page(PageHeader("Пока пусто", "У сотрудника ещё нет групп и детей — смотреть пока нечего."));
+            return Page(PageHeader("Пока пусто", "В этом пространстве ещё нет групп и детей — смотреть пока нечего."));
         var steps = new StackPanel { MaxWidth = 620, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 18, 0, 18) };
         var items = new (string Title, string Text)[]
         {

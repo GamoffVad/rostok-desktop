@@ -56,7 +56,7 @@ public sealed class DictsTab(Action refresh)
         if (dict.Hint is not null) main.Children.Add(Ui.Faint(dict.Hint).With(t => { t.MaxWidth = 720; t.HorizontalAlignment = HorizontalAlignment.Left; t.Margin = new Thickness(0, 0, 0, 12); }));
         main.Children.Add(dict.IsList ? ListEditor(dict, overrides[dict.Id] as JsonArray) : TableEditor(dict, overrides[dict.Id] as JsonObject ?? []));
         main.Children.Add(Ui.HelpNote(Ui.Faint(ViewOnly
-            ? "Словари сотрудника — только просмотр. Изменённые значения отмечены слева, под ними показано значение по умолчанию."
+            ? "Словари владельца пространства — только просмотр. Изменённые значения отмечены слева, под ними показано значение по умолчанию."
             : "Правки сохраняются сразу и видны на всех экранах, в отчётах и выгрузках. Очистите поле — вернётся значение по умолчанию (оно показано серым). Словари входят в резервную копию на вкладке «Данные».")).Margin(0, 20, 0, 0));
 
         var g2 = new Grid();

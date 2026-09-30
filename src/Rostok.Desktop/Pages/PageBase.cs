@@ -21,7 +21,7 @@ public abstract class PageBase : UserControl
     public Route Route { get; }
     protected static Store S => AppHost.Store!;
     protected static WorkspaceData D => S.Data;
-    // Руководитель смотрит пространство сотрудника: элементы правки скрыты, хранилище всё равно ничего не запишет.
+    // Администратор смотрит чужое пространство: элементы правки скрыты, хранилище всё равно ничего не запишет.
     protected static bool ViewOnly => S.ReadOnly;
 
     public void Refresh()
