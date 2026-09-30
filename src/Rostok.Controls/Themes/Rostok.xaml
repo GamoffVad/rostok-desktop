@@ -416,8 +416,11 @@
         <ControlTemplate TargetType="TextBox">
           <Border x:Name="box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="2">
             <Grid Margin="{TemplateBinding Padding}">
-              <TextBlock x:Name="hint" Text="{TemplateBinding c:Ui.Placeholder}" Foreground="{StaticResource Faint}" Opacity="0.85" Margin="3,0,0,0"
-                         VerticalAlignment="{TemplateBinding VerticalContentAlignment}" TextWrapping="Wrap" IsHitTestVisible="False" Visibility="Collapsed" />
+              <!-- подсказка повторяет отступы набранного текста: отступ поля внутри области ввода и 2 px поля строки -->
+              <Border x:Name="hint" Padding="{TemplateBinding Padding}" IsHitTestVisible="False" Visibility="Collapsed">
+                <TextBlock Text="{TemplateBinding c:Ui.Placeholder}" Foreground="{StaticResource Faint}" Opacity="0.85" Margin="2,0"
+                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}" TextWrapping="Wrap" />
+              </Border>
               <ScrollViewer x:Name="PART_ContentHost" Focusable="False" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                             HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
             </Grid>
@@ -463,7 +466,9 @@
         <ControlTemplate TargetType="PasswordBox">
           <Border x:Name="box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="2">
             <Grid Margin="{TemplateBinding Padding}">
-              <TextBlock x:Name="hint" Text="{TemplateBinding c:Ui.Placeholder}" Foreground="{StaticResource Faint}" Opacity="0.85" Margin="3,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+              <Border x:Name="hint" Padding="{TemplateBinding Padding}" IsHitTestVisible="False">
+                <TextBlock Text="{TemplateBinding c:Ui.Placeholder}" Foreground="{StaticResource Faint}" Opacity="0.85" Margin="2,0" VerticalAlignment="Center" />
+              </Border>
               <ScrollViewer x:Name="PART_ContentHost" Focusable="False" VerticalAlignment="Center" />
             </Grid>
           </Border>

@@ -10,7 +10,7 @@
     <AssemblyName>Rostok-Setup</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\Rostok.Desktop\Assets\rostok.ico</ApplicationIcon>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
     <Product>Установка «Ростка»</Product>
     <Company>Росток</Company>
     <SatelliteResourceLanguages>ru</SatelliteResourceLanguages>

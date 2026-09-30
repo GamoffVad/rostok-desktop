@@ -44,6 +44,32 @@ public static class SelfTest
     private static Button ButtonWithText(DependencyObject root, string text) =>
         Find<Button>(root).First(b => Find<TextBlock>(b).Any(t => t.Text == text) || (b.Content as string) == text);
 
+    // Подсказка в пустом поле начинается там же, где набранный текст: у обычного, многострочного поля, поля пароля и даты.
+    private static async Task CheckPlaceholders()
+    {
+        var typed = Ui.Input("Жжж");
+        var empty = Ui.Input("", "подсказка");
+        var multiTyped = Ui.Input("Жжж", "", null, multiline: true, rows: 2);
+        var multiEmpty = Ui.Input("", "подсказка", null, multiline: true, rows: 2);
+        var pwd = new PasswordBox();
+        Ui.SetPlaceholder(pwd, "подсказка");
+        var date = new DateField();
+        var w = new Window { Left = -20000, Width = 420, Height = 400, ShowActivated = false, Content = new StackPanel { Children = { typed, empty, multiTyped, multiEmpty, pwd, date } } };
+        w.Show();
+        await Settle();
+        static Point HintAt(Control c) => ((FrameworkElement)Ui.Descendants(c).OfType<TextBlock>().First(t => t.Text == Ui.GetPlaceholder(c))).TranslatePoint(new Point(0, 0), c);
+        var text = typed.GetRectFromCharacterIndex(0);
+        var multi = multiTyped.GetRectFromCharacterIndex(0);
+        bool Near(double a, double b) => Math.Abs(a - b) < 0.6;
+        Check(Near(HintAt(empty).X, text.Left) && Near(HintAt(pwd).X, text.Left)
+            && Near(HintAt(multiEmpty).X, multi.Left) && Near(HintAt(multiEmpty).Y, multi.Top),
+            $"подсказка в пустом поле начинается там же, где текст (текст {text.Left:0.#}, подсказка {HintAt(empty).X:0.#}, пароль {HintAt(pwd).X:0.#})");
+        var dateBox = Ui.Descendants(date).OfType<TextBox>().First();
+        var dateText = dateBox.GetRectFromCharacterIndex(0).Left;
+        Check(Near(HintAt(dateBox).X, dateText), "подсказка поля даты начинается там же, где текст");
+        w.Close();
+    }
+
     private static bool HasText(DependencyObject root, string text) => Find<TextBlock>(root).Any(t => t.Text == text) || Find<Button>(root).Any(b => (b.Content as string) == text);
 
     private static void Click(Button b) => ((IInvokeProvider)new ButtonAutomationPeer(b).GetPattern(PatternInterface.Invoke)!).Invoke();
@@ -62,6 +88,8 @@ public static class SelfTest
             var db = new Database(dbPath);
             db.EnsureCreated();
             Check(db.Exists, "база создаётся автоматически, если файла нет");
+            await CheckPlaceholders();
+
             var users = new Users(db);
             Check(users.Authenticate(UserRoles.DefaultLogin, UserRoles.DefaultPassword) is { IsMainAdmin: true }, "в новой базе есть главный администратор admin / admin");
             var uid = users.Create("proverka", "Проверка", "1234");
